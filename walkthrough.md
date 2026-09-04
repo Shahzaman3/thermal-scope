@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-We have successfully engineered, polished, and verified the complete prototype for distinguishing transient fire events (forest fires, stubble burns) from persistent industrial thermal emissions (steel plants, thermal power stations, sponge iron units, refineries) using satellite data.
+We have successfully engineered, polished, evaluated, and packaged the complete prototype for distinguishing transient fire events (forest fires, stubble burns) from persistent industrial thermal emissions (steel plants, thermal power stations, sponge iron units, refineries) using satellite data.
 
 The system runs **100% offline** without any runtime API dependencies. All satellite anomaly records from NASA FIRMS and industrial site data from OpenStreetMap (OSM) are persisted in a single-file SQLite database ([`thermal_classifier.db`](file:///Users/shahzaman/projects/sih-thermal-classifier/backend/data/thermal_classifier.db)).
 
@@ -16,25 +16,35 @@ The system runs **100% offline** without any runtime API dependencies. All satel
 
 ## Visual Verification & Demo Highlights
 
-### 1. Interactive Sensitivity Weight Tuner & Ground-Truth Validation Metrics
-Analysts and judges can adjust feature weights live in the UI to evaluate algorithmic sensitivity. Sliders auto-calculate total weight sum, dynamically re-score all 17 regional clusters with zero latency, and display ground-truth accuracy metrics:
+### 1. Interactive "What-If" Thermal Anomaly Simulator
+Evaluators can test hypothetical anomaly coordinates and scenarios. The system computes the spatial distance to nearest registered OSM industrial facilities and applies the 6-feature continuous classification in real time:
+
+![Steel Furnace Simulation Result](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/steel_furnace_simulation_1788559851748.png)
+
+![Simulator Modal Demo Video](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/simulator_modal_demo_1788559765734.webp)
+
+---
+
+### 2. Sensitivity Weight Tuner & Ground-Truth Validation Metrics
+Analysts can adjust feature weights live in the UI. Sliders auto-calculate total weight sum, dynamically re-score all 17 regional clusters with zero latency, and display ground-truth accuracy metrics:
 
 ![Sensitivity Weight Tuner Modal](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/weight_tuner_modal_1788558995967.png)
 
 ![Ground-Truth Validation Metrics](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/weight_tuner_modal_metrics_1788559013225.png)
 
-### 2. Persistent Industrial Source: Tata Steel Jamshedpur (Score: 94.5%)
+---
+
+### 3. Persistent Industrial Source: Tata Steel Jamshedpur (Score: 94.5%)
 Displays the **FRP Emission Curve** (72 satellite passes across 45 days, flat trend with 119.6 MW average, Day/Night passes), proximity to registered OSM industrial infrastructure (27m), and member detection heat dots plotted around the plant:
 
 ![Tata Steel Jamshedpur Inspection with FRP Curve](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/tata_steel_inspection_1788558083315.png)
 
-### 3. Transient Wildfire: Similipal Forest Outbreak (Score: 22.2%)
+---
+
+### 4. Transient Wildfire: Similipal Forest Outbreak (Score: 22.2%)
 In sharp contrast to industrial sources, this isolated forest perimeter burn features an isolated point pass, zero periodicity, and sits over 80 km away from any industrial site:
 
 ![Similipal Transient Wildfire Inspection](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/similipal_wildfire_inspection_1788558348838.png)
-
-### 4. Interactive Weight Tuner Demo Video
-![Weight Tuner Demo Video](/Users/shahzaman/.gemini/antigravity-ide/brain/470db168-28df-4610-9cf5-c7f7bfa79d7d/weight_tuner_and_benchmark_demo_1788558954551.webp)
 
 ---
 
@@ -74,7 +84,7 @@ From [`scripts/evaluate.py`](file:///Users/shahzaman/projects/sih-thermal-classi
 | Site Name | Expected Category | Predicted Band | Persistence Score | Validation Status |
 | :--- | :--- | :--- | :---: | :---: |
 | **Tata Steel Works, Jamshedpur** | Integrated Steel Complex | Persistent industrial source | **94.5%** | **PASS** |
-| **Rourkela Steel Plant (SAIL)** | Integrated Steel Plant | Persistent industrial source | **90.6%** | **PASS** |
+| **Rourkela Steel Plant (SAIL)** | Integrated Steel Complex | Persistent industrial source | **90.6%** | **PASS** |
 | **Tata Steel Kalinganagar** | Blast Furnace Hub | Persistent industrial source | **97.6%** | **PASS** |
 | **Talcher Super Thermal (NTPC)** | Coal Thermal Power | Persistent industrial source | **94.1%** | **PASS** |
 | **Neelachal Ispat Nigam (NINL)** | Metallurgical Plant | Persistent industrial source | **94.4%** | **PASS** |
@@ -88,18 +98,10 @@ From [`scripts/evaluate.py`](file:///Users/shahzaman/projects/sih-thermal-classi
 
 ## Deliverables & Documentation
 
-- **Pitch Deck & Judge Defense Guide**: [`pitch_deck.md`](file:///Users/shahzaman/projects/sih-thermal-classifier/pitch_deck.md) (8-slide presentation outline and Q&A matrix).
-- **Backend API Endpoints**:
-  - `GET /health` — Verifies database health and record counts.
-  - `GET /api/summary` — Global anomaly & cluster KPIs.
-  - `GET /api/evaluation` — Benchmark accuracy and confusion matrix.
-  - `GET /api/clusters` — Classified clusters with normalized features for real-time recalculation.
-  - `GET /api/clusters/{id}` — Full cluster telemetry with raw satellite passes.
-  - `GET /api/osm-sites` — Regional industrial landmarks overlay.
-- **Production Deployment Configs**:
-  - `backend/Dockerfile`, `backend/Procfile`, `backend/render.yaml`
-  - `frontend/vercel.json`
-- **Git Setup**: Initialized Git repository with clean `.gitignore`.
+- **Project Submission README**: [`README.md`](file:///Users/shahzaman/projects/sih-thermal-classifier/README.md)
+- **Pitch Deck & Judge Defense Guide**: [`pitch_deck.md`](file:///Users/shahzaman/projects/sih-thermal-classifier/pitch_deck.md) (8-slide presentation outline and Q&A matrix)
+- **Cloud Deployment Runbook**: [`DEPLOYMENT.md`](file:///Users/shahzaman/projects/sih-thermal-classifier/DEPLOYMENT.md) (Render & Vercel deployment guide)
+- **Git Commit**: Clean root commit initialized with `.gitignore` and database snapshot.
 
 ---
 
