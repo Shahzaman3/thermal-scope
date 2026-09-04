@@ -8,13 +8,16 @@ Populates SQLite 'hotspot_clusters' table and updates 'firms_detections.cluster_
 import sys
 from pathlib import Path
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 import numpy as np
+# pyrefly: ignore [missing-import]
 from sklearn.cluster import DBSCAN
 from math import radians, cos, sin, asin, sqrt
 
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import get_db, init_db
 
 # 1 km in radians for haversine metric (Earth radius ~ 6371.0088 km)

@@ -1,5 +1,7 @@
 from typing import List, Optional, Dict, Any
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException, Query
+# pyrefly: ignore [missing-import]
 from ..database import get_db
 import sys
 from pathlib import Path
@@ -8,6 +10,7 @@ from pathlib import Path
 scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 try:
+    # pyrefly: ignore [missing-import]
     from evaluate import run_evaluation
 except ImportError:
     run_evaluation = None

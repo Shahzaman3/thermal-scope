@@ -13,6 +13,7 @@ from math import radians, cos, sin, asin, sqrt
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import get_db
 
 EARTH_RADIUS_KM = 6371.0088

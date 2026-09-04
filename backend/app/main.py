@@ -3,9 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
+# pyrefly: ignore [missing-import]
 from .database import init_db, get_db_stats
+# pyrefly: ignore [missing-import]
 from .models import HealthResponse
+# pyrefly: ignore [missing-import]
 from .api.routes import router as api_router
+# pyrefly: ignore [missing-import]
 from .api.simulate import router as simulate_router
 
 

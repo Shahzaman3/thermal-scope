@@ -13,12 +13,14 @@ import argparse
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 import requests
 
 # Set path to import from app
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import get_db, init_db
 
 # Default Bounding Box for Jamshedpur–Odisha industrial belt (min_lon, min_lat, max_lon, max_lat)

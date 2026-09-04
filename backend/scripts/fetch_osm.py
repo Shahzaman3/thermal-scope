@@ -10,11 +10,13 @@ import sys
 import json
 import argparse
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 import requests
 
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import get_db, init_db
 
 # Bounding box in Overpass format: (min_lat, min_lon, max_lat, max_lon)

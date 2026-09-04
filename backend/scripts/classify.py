@@ -21,11 +21,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from math import radians, cos, sin, asin, sqrt
+# pyrefly: ignore [missing-import]
 import numpy as np
 
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import get_db, init_db
 
 EARTH_RADIUS_KM = 6371.0088

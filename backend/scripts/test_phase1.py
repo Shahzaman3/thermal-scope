@@ -5,7 +5,9 @@ from pathlib import Path
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
+# pyrefly: ignore [missing-import]
 from app.database import init_db, get_db_stats, DB_PATH
+# pyrefly: ignore [missing-import]
 from app.main import app
 
 def test_phase1():

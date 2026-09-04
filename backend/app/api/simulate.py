@@ -5,8 +5,11 @@ Allows operators to test the classification algorithm against hypothetical therm
 
 from typing import Dict, Any, Optional
 from math import radians, cos, sin, asin, sqrt
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
+# pyrefly: ignore [missing-import]
 from ..database import get_db
 
 router = APIRouter(prefix="/api", tags=["Simulation"])
