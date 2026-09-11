@@ -175,3 +175,18 @@ class FirmsIngestionRun(BaseModel):
 class IngestionHistoryResponse(BaseModel):
     history: list[FirmsIngestionRun]
     total_runs: int
+
+class AnalystReviewRequest(BaseModel):
+    cluster_id: int
+    review_status: str
+    notes: Optional[str] = None
+    analyst_name: Optional[str] = "Analyst"
+
+class AnalystReviewResponse(BaseModel):
+    status: str
+    review_id: int
+    cluster_id: int
+    review_status: str
+    notes: Optional[str] = None
+    analyst_name: str
+    updated_at: str

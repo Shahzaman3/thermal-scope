@@ -152,3 +152,45 @@ def test_api_simulate_hotspot_invalid(client: TestClient):
     """POST /api/simulate-hotspot with missing required fields should return 422."""
     response = client.post("/api/simulate-hotspot", json={"latitude": 22.0})
     assert response.status_code == 422
+
+
+def test_api_change_detection(client: TestClient):
+    """GET /api/v1/analytics/changes should return emerging sources and score transitions."""
+    response = client.get("/api/v1/analytics/changes")
+    assert response.status_code == 200
+    data = response.json()
+    assert "emerging_sources_count" in data
+    assert "flagged_transitions_count" in data
+    assert "emerging_sources" in data
+    assert "flagged_transitions" in data
+
+
+def test_api_analyst_review_workflow(client: TestClient):
+    """POST /api/v1/clusters/review and GET /api/v1/clusters/priority-queue should manage review state."""
+    # Test Priority Queue
+    res_q = client.get("/api/v1/clusters/priority-queue")
+    assert res_q.status_code == 200
+    queue = res_q.json()
+    assert isinstance(queue, list)
+    assert len(queue) > 0
+
+    # Submit Review for cluster 1
+    review_payload = {
+        "cluster_id": 1,
+        "review_status": "VERIFIED_INDUSTRIAL",
+        "notes": "Tata Steel blast furnace confirmed by analyst.",
+        "analyst_name": "Lead Analyst"
+    }
+    res_post = client.post("/api/v1/clusters/review", json=review_payload)
+    assert res_post.status_code == 200
+    post_data = res_post.json()
+    assert post_data["status"] == "success"
+    assert post_data["cluster_id"] == 1
+    assert post_data["review_status"] == "VERIFIED_INDUSTRIAL"
+
+    # Get single cluster review
+    res_get = client.get("/api/v1/clusters/1/review")
+    assert res_get.status_code == 200
+    get_data = res_get.json()
+    assert get_data["review_status"] == "VERIFIED_INDUSTRIAL"
+    assert get_data["notes"] == "Tata Steel blast furnace confirmed by analyst."

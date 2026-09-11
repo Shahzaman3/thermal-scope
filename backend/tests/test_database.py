@@ -101,6 +101,7 @@ class TestDatabaseSchema:
         stats = get_db_stats(temp_db)
         assert stats["db_path"] == str(temp_db)
         assert stats["db_size_bytes"] > 0
-        assert len(stats["table_counts"]) == 6
+        assert len(stats["table_counts"]) == 7
         assert stats["table_counts"]["firms_detections"] == 0
         assert stats["table_counts"]["firms_ingestion_runs"] == 0
+        assert stats["table_counts"]["analyst_reviews"] == 0

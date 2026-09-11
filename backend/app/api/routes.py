@@ -3,8 +3,10 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 # pyrefly: ignore [missing-import]
 from ..database import get_db, get_db_stats
-from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse, IngestionHistoryResponse
+from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse, IngestionHistoryResponse, AnalystReviewRequest, AnalystReviewResponse
 from ..services.firms_ingestion_service import get_ingestion_status, ingest_live_firms_data, get_ingestion_history, update_ingestion_run_pipeline, _state
+from ..services.change_detection import get_change_detection_summary
+from ..services.analyst_service import submit_analyst_review, get_analyst_review_for_cluster, get_priority_review_queue
 import sys
 from pathlib import Path
 
@@ -407,3 +409,43 @@ def run_pipeline(ingest_live: bool = Query(default=False, description="Optionall
             status_code=500,
             detail="An internal error occurred during pipeline execution."
         )
+
+
+@router.get("/v1/analytics/changes", tags=["Analytics & Change Detection"])
+@router.get("/analytics/changes", tags=["Analytics & Change Detection"])
+def get_change_detection_analytics() -> Dict[str, Any]:
+    """Retrieve change detection analytics including emerging thermal sources and score transitions."""
+    return get_change_detection_summary()
+
+
+@router.get("/v1/clusters/priority-queue", tags=["Analyst Review Queue"])
+@router.get("/clusters/priority-queue", tags=["Analyst Review Queue"])
+def get_analyst_priority_queue(limit: int = Query(default=50, ge=1, le=500)) -> List[Dict[str, Any]]:
+    """Retrieve clusters ranked by analyst inspection priority."""
+    return get_priority_review_queue(limit=limit)
+
+
+@router.get("/v1/clusters/{cluster_id}/review", tags=["Analyst Review Queue"])
+@router.get("/clusters/{cluster_id}/review", tags=["Analyst Review Queue"])
+def get_cluster_review(cluster_id: int) -> Dict[str, Any]:
+    """Retrieve review verification status and notes for a specific cluster."""
+    rev = get_analyst_review_for_cluster(cluster_id)
+    if not rev:
+        return {"cluster_id": cluster_id, "review_status": "UNREVIEWED", "notes": None, "analyst_name": "Analyst", "updated_at": None}
+    return rev
+
+
+@router.post("/v1/clusters/review", tags=["Analyst Review Queue"])
+@router.post("/clusters/review", tags=["Analyst Review Queue"])
+def post_cluster_review(req: AnalystReviewRequest) -> AnalystReviewResponse:
+    """Submit or update analyst verification review status and notes for a cluster."""
+    try:
+        res = submit_analyst_review(
+            cluster_id=req.cluster_id,
+            review_status=req.review_status,
+            notes=req.notes,
+            analyst_name=req.analyst_name or "Analyst"
+        )
+        return AnalystReviewResponse(**res)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
