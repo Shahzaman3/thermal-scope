@@ -1,4 +1,4 @@
-# Production Dockerfile for SIH 2026 Thermal Classifier Backend
+# Production Dockerfile for IGNITRA Backend
 FROM python:3.13-slim
 
 WORKDIR /app

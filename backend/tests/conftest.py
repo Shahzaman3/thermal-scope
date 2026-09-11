@@ -1,5 +1,5 @@
 """
-Shared Pytest Fixtures for SIH26162 Automated Test Suite.
+Shared Pytest Fixtures for IGNITRA Automated Test Suite.
 Provides:
 - Isolated temporary database fixture (protecting production/demo database)
 - FastAPI TestClient fixture

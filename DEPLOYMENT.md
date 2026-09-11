@@ -1,6 +1,6 @@
-# Cloud Deployment Runbook: SIH 2026 Thermal Classifier
+# IGNITRA — Cloud Deployment Runbook
 
-This guide explains how to deploy the **Industrial Fire & Persistent Thermal Source Classifier** prototype to free cloud hosting tiers:
+This guide explains how to deploy the **IGNITRA** prototype to free cloud hosting tiers:
 - **Backend:** [Render](https://render.com/) or [Railway](https://railway.app/)
 - **Frontend:** [Vercel](https://vercel.com/) or [Netlify](https://www.netlify.com/)
 
@@ -19,10 +19,10 @@ git status
 
 # Add files and commit
 git add .
-git commit -m "feat: SIH 2026 Industrial Thermal Classifier Prototype (NTRO SIH26162)"
+git commit -m "feat: IGNITRA — Industrial Thermal Classifier Prototype (NTRO SIH26162)"
 
 # Add your remote GitHub repo and push
-git remote add origin https://github.com/<YOUR_GITHUB_USERNAME>/sih-thermal-classifier.git
+git remote add origin https://github.com/<YOUR_GITHUB_USERNAME>/ignitra.git
 git branch -M main
 git push -u origin main
 ```
@@ -33,9 +33,9 @@ git push -u origin main
 
 1. Log in to [Render Dashboard](https://dashboard.render.com/).
 2. Click **New +** → **Web Service**.
-3. Connect your GitHub repository `sih-thermal-classifier`.
+3. Connect your GitHub repository `ignitra`.
 4. Configure the service:
-   - **Name:** `sih-thermal-classifier-api`
+   - **Name:** `ignitra-api`
    - **Region:** Any (e.g. Singapore or Oregon)
    - **Root Directory:** `backend`
    - **Environment:** `Python 3`
@@ -44,7 +44,7 @@ git push -u origin main
    - **Instance Type:** `Free`
 5. Click **Deploy Web Service**.
 6. Once deployed, note down your public backend URL:  
-   `https://sih-thermal-classifier-api.onrender.com`
+   `https://ignitra-api.onrender.com`
 
 ---
 
@@ -62,7 +62,7 @@ railway up
 
 1. Log in to [Vercel Dashboard](https://vercel.com/).
 2. Click **Add New...** → **Project**.
-3. Import your GitHub repository `sih-thermal-classifier`.
+3. Import your GitHub repository `ignitra`.
 4. Configure the project settings:
    - **Framework Preset:** `Vite`
    - **Root Directory:** Click Edit and select `frontend`.
@@ -71,10 +71,10 @@ railway up
 5. **Environment Variables:**
    - Add a new environment variable:
      - **Key:** `VITE_API_URL`
-     - **Value:** Your Render backend URL (e.g., `https://sih-thermal-classifier-api.onrender.com`)
+     - **Value:** Your Render backend URL (e.g., `https://ignitra-api.onrender.com`)
 6. Click **Deploy**.
 7. Vercel will build and assign your live production domain:  
-   `https://sih-thermal-classifier.vercel.app`
+   `https://ignitra.vercel.app`
 
 ---
 

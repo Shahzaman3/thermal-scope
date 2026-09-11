@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sih-thermal-classifier-api
+    name: ignitra-api
     env: python
     region: oregon
     plan: free

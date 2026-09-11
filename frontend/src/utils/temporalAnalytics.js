@@ -1,5 +1,5 @@
 /**
- * Temporal Analytics Utility for SIH26162
+ * Temporal Analytics Utility for IGNITRA
  * Computes descriptive multi-temporal statistics, historical activity patterns,
  * and trend indicators from satellite thermal observations.
  *

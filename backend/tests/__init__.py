@@ -1,3 +1,3 @@
 """
-SIH26162 Automated Test Suite.
+IGNITRA Automated Test Suite.
 """

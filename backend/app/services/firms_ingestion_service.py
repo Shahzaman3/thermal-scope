@@ -192,6 +192,12 @@ def get_ingestion_status(custom_db_path: Optional[Path] = None) -> Dict[str, Any
     op_status = determine_operational_status(_state, custom_db_path)
     _state.operational_status = op_status
 
+    try:
+        from .scheduler_service import get_scheduler_status
+        sched_status = get_scheduler_status()
+    except Exception:
+        sched_status = {}
+
     return {
         "source": _state.source,
         "provenance": _state.provenance,
@@ -222,7 +228,17 @@ def get_ingestion_status(custom_db_path: Optional[Path] = None) -> Dict[str, Any
         "pipeline_status": _state.pipeline_status,
         "error_category": _state.error_category,
         "last_error": _state.last_error,
-        "message": _state.message
+        "message": _state.message,
+        "auto_refresh_enabled": sched_status.get("auto_refresh_enabled", False),
+        "auto_refresh_interval_minutes": sched_status.get("auto_refresh_interval_minutes", 60),
+        "scheduler_running": sched_status.get("scheduler_running", False),
+        "last_scheduled_run": sched_status.get("last_scheduled_run"),
+        "last_scheduled_run_utc": sched_status.get("last_scheduled_run_utc"),
+        "last_scheduled_run_ist": sched_status.get("last_scheduled_run_ist"),
+        "next_scheduled_run": sched_status.get("next_scheduled_run"),
+        "next_scheduled_run_utc": sched_status.get("next_scheduled_run_utc"),
+        "next_scheduled_run_ist": sched_status.get("next_scheduled_run_ist"),
+        "current_ingestion_running": sched_status.get("current_ingestion_running", False)
     }
 
 

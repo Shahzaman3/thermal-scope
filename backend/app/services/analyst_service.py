@@ -9,27 +9,65 @@ from typing import Dict, Any, List, Optional
 from ..database import get_db, DB_PATH
 
 
-VALID_REVIEW_STATUSES = {"UNREVIEWED", "UNDER_INVESTIGATION", "VERIFIED_INDUSTRIAL", "VERIFIED_WILDFIRE", "DISMISSED"}
+VALID_PERSISTED_STATUSES = {
+    "UNDER_INVESTIGATION",
+    "VERIFIED_INDUSTRIAL",
+    "VERIFIED_WILDFIRE",
+    "DISMISSED"
+}
+VALID_REVIEW_STATUSES = VALID_PERSISTED_STATUSES | {"UNREVIEWED"}
+MAX_NOTES_LENGTH = 2000
+MAX_ANALYST_NAME_LENGTH = 100
 
 
 def submit_analyst_review(
     cluster_id: int,
     review_status: str,
     notes: Optional[str] = None,
-    analyst_name: str = "Analyst",
+    analyst_name: Optional[str] = "Analyst",
     custom_db_path: Optional[Path] = None
 ) -> Dict[str, Any]:
-    """Submit or update an analyst review verification status for a specific cluster."""
-    status_clean = review_status.strip().upper()
-    if status_clean not in VALID_REVIEW_STATUSES:
-        raise ValueError(f"Invalid review_status '{review_status}'. Must be one of {VALID_REVIEW_STATUSES}")
+    """
+    Submit or update an analyst review verification status for a specific cluster.
+    Enforces cluster existence, status validation, notes length bounds, and atomic upsert.
+    """
+    if not isinstance(cluster_id, int) or cluster_id <= 0:
+        raise ValueError(f"Invalid cluster_id '{cluster_id}'. Must be a positive integer.")
 
+    status_clean = str(review_status).strip().upper()
+    if status_clean not in VALID_REVIEW_STATUSES:
+        raise ValueError(f"Invalid review_status '{review_status}'. Must be one of {sorted(VALID_REVIEW_STATUSES)}")
+
+    clean_notes = notes.strip() if isinstance(notes, str) else None
+    if clean_notes and len(clean_notes) > MAX_NOTES_LENGTH:
+        raise ValueError(f"Analyst notes exceed maximum allowed length of {MAX_NOTES_LENGTH} characters.")
+
+    clean_analyst = (analyst_name.strip() if isinstance(analyst_name, str) and analyst_name.strip() else "Analyst")[:MAX_ANALYST_NAME_LENGTH]
     now_iso = datetime.now(timezone.utc).isoformat()
 
     with get_db(custom_db_path) as conn:
         cursor = conn.cursor()
 
-        # Check existing review entry
+        # Enforce referential integrity: cluster must exist
+        cursor.execute("SELECT cluster_id FROM hotspot_clusters WHERE cluster_id = ?", (cluster_id,))
+        if not cursor.fetchone():
+            raise KeyError(f"Cluster #{cluster_id} not found in database.")
+
+        # If setting to UNREVIEWED, remove any existing review record to represent 'no review yet'
+        if status_clean == "UNREVIEWED":
+            cursor.execute("DELETE FROM analyst_reviews WHERE cluster_id = ?", (cluster_id,))
+            return {
+                "status": "success",
+                "review_id": None,
+                "cluster_id": cluster_id,
+                "review_status": "UNREVIEWED",
+                "notes": None,
+                "analyst_name": clean_analyst,
+                "updated_at": now_iso,
+                "has_review": False
+            }
+
+        # Check existing review entry for atomic upsert
         cursor.execute("SELECT id FROM analyst_reviews WHERE cluster_id = ?", (cluster_id,))
         existing = cursor.fetchone()
 
@@ -38,13 +76,13 @@ def submit_analyst_review(
                 UPDATE analyst_reviews
                 SET review_status = ?, notes = ?, analyst_name = ?, updated_at = ?
                 WHERE cluster_id = ?
-            """, (status_clean, notes, analyst_name, now_iso, cluster_id))
+            """, (status_clean, clean_notes, clean_analyst, now_iso, cluster_id))
             review_id = existing["id"]
         else:
             cursor.execute("""
                 INSERT INTO analyst_reviews (cluster_id, review_status, notes, analyst_name, updated_at)
                 VALUES (?, ?, ?, ?, ?)
-            """, (cluster_id, status_clean, notes, analyst_name, now_iso))
+            """, (cluster_id, status_clean, clean_notes, clean_analyst, now_iso))
             review_id = cursor.lastrowid
 
     return {
@@ -52,19 +90,32 @@ def submit_analyst_review(
         "review_id": review_id,
         "cluster_id": cluster_id,
         "review_status": status_clean,
-        "notes": notes,
-        "analyst_name": analyst_name,
-        "updated_at": now_iso
+        "notes": clean_notes,
+        "analyst_name": clean_analyst,
+        "updated_at": now_iso,
+        "has_review": True
     }
 
 
 def get_analyst_review_for_cluster(
     cluster_id: int,
     custom_db_path: Optional[Path] = None
-) -> Optional[Dict[str, Any]]:
-    """Retrieve existing analyst review status and notes for a cluster."""
+) -> Dict[str, Any]:
+    """
+    Retrieve existing analyst review status and notes for a cluster.
+    Raises KeyError if cluster does not exist. Returns default unreviewed state if no record exists.
+    """
+    if not isinstance(cluster_id, int) or cluster_id <= 0:
+        raise ValueError(f"Invalid cluster_id '{cluster_id}'. Must be a positive integer.")
+
     with get_db(custom_db_path) as conn:
         cursor = conn.cursor()
+
+        # Enforce referential integrity: cluster must exist
+        cursor.execute("SELECT cluster_id FROM hotspot_clusters WHERE cluster_id = ?", (cluster_id,))
+        if not cursor.fetchone():
+            raise KeyError(f"Cluster #{cluster_id} not found in database.")
+
         cursor.execute("""
             SELECT id, cluster_id, review_status, notes, analyst_name, updated_at
             FROM analyst_reviews
@@ -73,14 +124,24 @@ def get_analyst_review_for_cluster(
         row = cursor.fetchone()
 
     if not row:
-        return None
+        return {
+            "id": None,
+            "cluster_id": cluster_id,
+            "review_status": "UNREVIEWED",
+            "notes": None,
+            "analyst_name": "Analyst",
+            "updated_at": None,
+            "has_review": False
+        }
+
     return {
         "id": row["id"],
         "cluster_id": row["cluster_id"],
         "review_status": row["review_status"],
         "notes": row["notes"],
         "analyst_name": row["analyst_name"],
-        "updated_at": row["updated_at"]
+        "updated_at": row["updated_at"],
+        "has_review": True
     }
 
 

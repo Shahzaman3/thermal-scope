@@ -1,9 +1,9 @@
-# SIH 2026 Internal Round Pitch Deck & Defense Guide
+# IGNITRA — Pitch Deck & Defense Guide
 
 **Problem Statement:** SIH26162  
 **Sponsored By:** National Technical Research Organisation (NTRO)  
 **Theme:** Space Technology  
-**Project Title:** AI-Based Detection & Classification of Industrial Fires and Persistent Thermal Sources  
+**Project Title:** IGNITRA — AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data  
 **Test Region:** Jamshedpur–Odisha Industrial Corridor, India  
 
 ---

@@ -115,7 +115,7 @@ const BASEMAP_OPTIONS = {
     id: 'offline_grid',
     name: 'Offline Tactical Grid (0 Network)',
     url: null,
-    attribution: 'Offline Tactical Coordinate System • SIH26162',
+    attribution: 'Offline Tactical Coordinate System • IGNITRA',
     className: 'offline-grid-tiles'
   }
 };
@@ -128,7 +128,12 @@ export default function MapView({
   osmSites,
   showOsmSites,
   onToggleOsmSites,
-  flyToTarget
+  flyToTarget,
+  changeData,
+  showChangeLayer = true,
+  onToggleChangeLayer,
+  selectedChange,
+  onSelectChange
 }) {
   const [selectedBasemap, setSelectedBasemap] = useState(CARTO_KEY ? 'carto_dark' : 'esri_dark');
   const [tileOffline, setTileOffline] = useState(false);
@@ -165,7 +170,9 @@ export default function MapView({
     iconAnchor: [7, 7]
   });
 
-  const activeFlyTarget = flyToTarget || (selectedCluster ? { lat: selectedCluster.centroid_lat, lon: selectedCluster.centroid_lon } : null);
+  const activeFlyTarget = flyToTarget || (selectedChange && selectedChange.lat && selectedChange.lon
+    ? { lat: selectedChange.lat, lon: selectedChange.lon }
+    : (selectedCluster ? { lat: selectedCluster.centroid_lat, lon: selectedCluster.centroid_lon } : null));
 
   return (
     <div className={`map-viewport ${selectedBasemap === 'offline_grid' || tileOffline ? 'is-offline' : ''}`} id="map-viewport">
@@ -320,6 +327,142 @@ export default function MapView({
             </React.Fragment>
           );
         })}
+
+        {/* Phase 4C.2: Dedicated Change Detection Map Layer */}
+        {showChangeLayer && changeData && (
+          <>
+            {/* 1. Emerging / New Thermal Sources */}
+            {Array.isArray(changeData.emerging_sources) && changeData.emerging_sources.map((item, idx) => {
+              const isSelected = selectedChange && (selectedChange.uid === `emerging-${item.detection_id || idx}` || selectedChange.raw?.detection_id === item.detection_id);
+              return (
+                <React.Fragment key={`emerging-${item.detection_id || idx}`}>
+                  {/* Outer static accent ring */}
+                  <CircleMarker
+                    center={[item.latitude, item.longitude]}
+                    radius={isSelected ? 18 : 14}
+                    pathOptions={{
+                      color: '#38bdf8',
+                      fillColor: '#38bdf8',
+                      fillOpacity: isSelected ? 0.25 : 0.12,
+                      weight: isSelected ? 2.5 : 1.5,
+                      dashArray: '3, 3'
+                    }}
+                  />
+                  {/* Emerging core marker */}
+                  <CircleMarker
+                    center={[item.latitude, item.longitude]}
+                    radius={isSelected ? 8 : 6}
+                    pathOptions={{
+                      color: isSelected ? '#ffffff' : '#38bdf8',
+                      fillColor: '#0284c7',
+                      fillOpacity: 0.95,
+                      weight: isSelected ? 2.5 : 1.5
+                    }}
+                    eventHandlers={{
+                      click: () => onSelectChange && onSelectChange({
+                        uid: `emerging-${item.detection_id || idx}`,
+                        category: 'EMERGING',
+                        categoryLabel: 'Emerging Source',
+                        targetId: `Detection #${item.detection_id}`,
+                        clusterId: null,
+                        lat: item.latitude,
+                        lon: item.longitude,
+                        frp: item.frp,
+                        confidence: item.confidence,
+                        satellite: item.satellite,
+                        acq_datetime: item.acq_datetime,
+                        dist_to_cluster: item.dist_to_nearest_cluster_meters,
+                        nearest_cluster_id: item.nearest_cluster_id,
+                        reason: `Detected ${(item.dist_to_nearest_cluster_meters / 1000).toFixed(1)} km from nearest cluster footprint`,
+                        badgeColor: '#38bdf8',
+                        raw: item
+                      })
+                    }}
+                  >
+                    <Tooltip direction="top" offset={[0, -10]} opacity={0.98}>
+                      <div className="tactical-tooltip change-tooltip">
+                        <div className="tooltip-header-row">
+                          <span className="tooltip-badge" style={{ color: '#38bdf8' }}>CHANGE • EMERGING SOURCE</span>
+                          <span className="tooltip-band-pill" style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>NEW</span>
+                        </div>
+                        <div className="tooltip-title">Detection #{item.detection_id}</div>
+                        <div className="tooltip-sub">
+                          FRP: <b>{item.frp?.toFixed(1) || 'N/A'} MW</b> • {item.satellite || 'VIIRS'} ({item.confidence || 'verified'})
+                        </div>
+                        <div className="tooltip-coords">
+                          Observed: <b>{item.acq_datetime || 'recent'}</b>
+                        </div>
+                        <div className="tooltip-proximity">
+                          Distance: <b>{(item.dist_to_nearest_cluster_meters / 1000).toFixed(1)} km</b> to nearest cluster
+                        </div>
+                      </div>
+                    </Tooltip>
+                  </CircleMarker>
+                </React.Fragment>
+              );
+            })}
+
+            {/* 2. Flagged Transition Accent Rings around Clusters */}
+            {Array.isArray(changeData.flagged_transitions) && changeData.flagged_transitions.map((item) => {
+              const isSelected = selectedChange && (selectedChange.uid === `transition-${item.cluster_id}` || selectedChange.clusterId === item.cluster_id);
+              let ringColor = '#f97316';
+              let ringLabel = 'HIGH FRP VARIANCE';
+              if (item.is_borderline && item.high_variance) {
+                ringColor = '#c084fc';
+                ringLabel = 'BORDERLINE & HIGH VARIANCE';
+              } else if (item.is_borderline) {
+                ringColor = '#f59e0b';
+                ringLabel = 'BORDERLINE SCORE';
+              }
+
+              return (
+                <CircleMarker
+                  key={`trans-ring-${item.cluster_id}`}
+                  center={[item.centroid_lat, item.centroid_lon]}
+                  radius={isSelected ? 26 : 21}
+                  pathOptions={{
+                    color: ringColor,
+                    fillColor: ringColor,
+                    fillOpacity: isSelected ? 0.22 : 0.08,
+                    weight: isSelected ? 2.5 : 1.5,
+                    dashArray: item.is_borderline ? '4, 4' : undefined
+                  }}
+                  eventHandlers={{
+                    click: () => onSelectChange && onSelectChange({
+                      uid: `transition-${item.cluster_id}`,
+                      category: item.is_borderline && item.high_variance ? 'BORDERLINE_AND_VARIANCE' : (item.is_borderline ? 'BORDERLINE' : 'HIGH_VARIANCE'),
+                      categoryLabel: ringLabel,
+                      targetId: `Cluster #${item.cluster_id}`,
+                      clusterId: item.cluster_id,
+                      lat: item.centroid_lat,
+                      lon: item.centroid_lon,
+                      persistenceScore: item.persistence_score,
+                      bandLabel: item.band_label,
+                      isBorderline: item.is_borderline,
+                      highVariance: item.high_variance,
+                      reason: item.reason || (item.is_borderline ? 'Borderline persistence score near boundary' : 'High FRP trend fluctuation'),
+                      badgeColor: ringColor,
+                      raw: item
+                    })
+                  }}
+                >
+                  <Tooltip direction="bottom" offset={[0, 10]} opacity={0.98}>
+                    <div className="tactical-tooltip change-tooltip">
+                      <div className="tooltip-header-row">
+                        <span className="tooltip-badge" style={{ color: ringColor }}>CHANGE • {ringLabel}</span>
+                      </div>
+                      <div className="tooltip-title">Cluster #{item.cluster_id}</div>
+                      <div className="tooltip-sub">
+                        Persistence: <b>{(item.persistence_score * 100).toFixed(1)}%</b> ({item.band_label})
+                      </div>
+                      <div className="tooltip-proximity">{item.reason}</div>
+                    </div>
+                  </Tooltip>
+                </CircleMarker>
+              );
+            })}
+          </>
+        )}
       </MapContainer>
 
       {/* Floating Tactical Map Legend */}
@@ -334,6 +477,8 @@ export default function MapView({
           if (bm !== 'offline_grid') setTileOffline(false);
         }}
         basemapOptions={BASEMAP_OPTIONS}
+        showChangeLayer={showChangeLayer}
+        onToggleChangeLayer={onToggleChangeLayer}
       />
 
       {/* Offline Tactical Fallback Status Indicator */}

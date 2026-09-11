@@ -179,7 +179,7 @@ def run_evaluation():
 
     eval_data = {
         "evaluation_timestamp": "2026-09-05",
-        "problem_statement": "SIH26162 (NTRO)",
+        "problem_statement": "IGNITRA (NTRO)",
         "overall_accuracy_pct": accuracy,
         "industrial_precision_pct": precision,
         "industrial_recall_pct": recall,
@@ -195,11 +195,11 @@ def run_evaluation():
 
 def print_summary(data):
     print("=" * 78)
-    print(" NTRO ALGORITHMIC BENCHMARK VALIDATION REPORT — SIH26162")
+    print(" IGNITRA ALGORITHMIC BENCHMARK VALIDATION REPORT")
     print(" Region: Jamshedpur–Odisha Industrial Belt")
     print("=" * 78)
     print(f"  Overall Accuracy:      {data['overall_accuracy_pct']}% ({data['correct_predictions']}/{data['total_benchmarks']} Sites)")
-    print(f"  Industrial Precision:  {data['industrial_precision_pct']}% (Zero False Positives)")
+    print(f"  Industrial Precision:  {data['industrial_precision_pct']}%")
     print(f"  Industrial Recall:     {data['industrial_recall_pct']}% (Zero Missed Industrial Facilities)")
     print(f"  F1-Score:              {data['industrial_f1_score']}%")
     print("-" * 78)

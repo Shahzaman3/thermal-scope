@@ -147,7 +147,7 @@ def fetch_from_overpass(bbox=DEFAULT_BBOX):
 out center 150 tags;
 """
     headers = {
-        "User-Agent": "SIH2026-ThermalClassifier/1.0 (contact: test@hackathon.org)",
+        "User-Agent": "IGNITRA/1.0 (contact: test@hackathon.org)",
         "Content-Type": "application/x-www-form-urlencoded"
     }
 

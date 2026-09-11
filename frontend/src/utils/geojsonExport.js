@@ -1,5 +1,5 @@
 /**
- * GeoJSON Exporter Utility for SIH26162 Thermal Classifier
+ * GeoJSON Exporter Utility for IGNITRA
  * Standards-compliant GeoJSON (RFC 7946) FeatureCollection serialization for QGIS/ArcGIS.
  * Coordinates are formatted strictly as [longitude, latitude].
  */
@@ -59,7 +59,7 @@ export function clustersToGeoJSON(clusters, options = {}) {
   return {
     type: "FeatureCollection",
     metadata: {
-      project: "SIH26162",
+      project: "IGNITRA",
       system: "AI-Based Thermal Source Intelligence",
       region: "Jamshedpur–Odisha Industrial Corridor",
       generated_at: new Date().toISOString(),

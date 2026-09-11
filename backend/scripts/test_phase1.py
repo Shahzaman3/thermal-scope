@@ -31,7 +31,7 @@ REQUIRED_TABLES = {
 
 def test_database_integrity():
     print("==================================================")
-    print("SIH26162 — SQLite Database Integrity & Smoke Test")
+    print("IGNITRA \u2014 SQLite Database Integrity & Smoke Test")
     print("==================================================")
 
     # 1. Ensure initialization does not error

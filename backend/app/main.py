@@ -24,15 +24,22 @@ from .api.routes import router as api_router
 from .api.simulate import router as simulate_router
 
 
+from .services.scheduler_service import start_scheduler, stop_scheduler
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize SQLite schema and tables on startup
     init_db()
+    # Start automated FIRMS monitoring task if enabled
+    start_scheduler()
     yield
+    # Cleanly stop background monitoring task on shutdown
+    await stop_scheduler()
 
 
 app = FastAPI(
-    title="SIH 2026 Industrial Thermal Classifier API",
+    title="IGNITRA API",
     description="Offline-first API for AI-based detection and classification of industrial fires and persistent thermal sources.",
     version="1.0.0",
     lifespan=lifespan
@@ -70,7 +77,7 @@ def health_check():
 
     return HealthResponse(
         status="ok",
-        service="SIH 2026 Industrial Fire & Persistent Thermal Source Classifier",
+        service="IGNITRA — Intelligent Geospatial Ignition & Thermal Recognition Architecture",
         version="1.0.0",
         database=db_stats,
         firms_service=firms_srv,

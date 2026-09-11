@@ -87,6 +87,13 @@ export default function FirmsIngestionModal({ isOpen, onClose, onIngestionSucces
         body: JSON.stringify(payload)
       });
 
+      if (res.status === 409) {
+        const errData = await res.json();
+        setErrorMsg(errData.detail || 'An ingestion cycle is currently in progress. Please wait for the current run to complete.');
+        setErrorCategory('INGESTION_CONFLICT');
+        return;
+      }
+
       const data = await res.json();
 
       if (data.status === 'success') {
@@ -158,19 +165,37 @@ export default function FirmsIngestionModal({ isOpen, onClose, onIngestionSucces
               )}
             </div>
             <div className="status-hero-right">
-              <div className={`config-pill ${isKeyConfigured ? 'is-configured' : 'is-unconfigured'}`}>
-                {isKeyConfigured ? (
-                  <>
-                    <CheckCircle2 size={12} className="inline-icon-svg" />
-                    <span>MAP_KEY configured</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle size={12} className="inline-icon-svg" />
-                    <span>No MAP_KEY in .env</span>
-                  </>
-                )}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div className={`config-pill ${isKeyConfigured ? 'is-configured' : 'is-unconfigured'}`}>
+                  {isKeyConfigured ? (
+                    <>
+                      <CheckCircle2 size={12} className="inline-icon-svg" />
+                      <span>MAP_KEY configured</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={12} className="inline-icon-svg" />
+                      <span>No MAP_KEY in .env</span>
+                    </>
+                  )}
+                </div>
+                <div className={`auto-refresh-pill ${statusInfo?.auto_refresh_enabled ? 'is-active' : 'is-disabled'}`}>
+                  <RotateCw size={10} className={`inline-icon-svg ${statusInfo?.scheduler_running ? 'is-spinning' : ''}`} />
+                  <span>
+                    Auto-Refresh: {statusInfo?.auto_refresh_enabled ? `ON · Every ${statusInfo.auto_refresh_interval_minutes || 60}m` : 'OFF'}
+                  </span>
+                </div>
               </div>
+              {statusInfo?.auto_refresh_enabled && statusInfo?.next_scheduled_run && (
+                <div className="status-latency-text">
+                  Next auto-refresh: <b>{new Date(statusInfo.next_scheduled_run).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b>
+                </div>
+              )}
+              {statusInfo?.current_ingestion_running && (
+                <div className="status-latency-text" style={{ color: '#fbbf24', fontWeight: 600 }}>
+                  Ingestion cycle currently in progress...
+                </div>
+              )}
               <div className="status-latency-text">VIIRS 375m &amp; MODIS 1km NRT</div>
             </div>
           </div>

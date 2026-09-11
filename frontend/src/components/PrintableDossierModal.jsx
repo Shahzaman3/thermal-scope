@@ -71,7 +71,7 @@ export default function PrintableDossierModal({ isOpen, onClose, detail, onPrint
             <div className="doc-header-top">
               <div className="agency-badge">
                 <span className="agency-title">NTRO • SPACE SURVEILLANCE &amp; INTELLIGENCE</span>
-                <span className="agency-sub">SMART INDIA HACKATHON 2026 • PROBLEM STATEMENT SIH26162</span>
+                <span className="agency-sub">INTELLIGENT GEOSPATIAL IGNITION &amp; THERMAL RECOGNITION ARCHITECTURE</span>
               </div>
               <div className="doc-classification-stamp">
                 SYSTEM-GENERATED ANALYTICAL OUTPUT
@@ -338,7 +338,7 @@ export default function PrintableDossierModal({ isOpen, onClose, detail, onPrint
 
           {/* Document Footer */}
           <footer className="dossier-doc-footer">
-            <div>CONFIDENTIAL &amp; PROPRIETARY • NTRO SPACE SURVEILLANCE • SIH26162</div>
+            <div>CONFIDENTIAL &amp; PROPRIETARY • NTRO SPACE SURVEILLANCE • IGNITRA</div>
             <div>PAGE 1 OF 1 • VERIFIED CLASSIFIER BUILD</div>
           </footer>
         </div>

@@ -4,6 +4,8 @@ import TacticalHeader from './components/TacticalHeader';
 import TacticalSummaryBar from './components/TacticalSummaryBar';
 import MapView from './components/MapView';
 import ClusterDetailsPanel from './components/ClusterDetailsPanel';
+import ChangeDetectionPanel from './components/ChangeDetectionPanel';
+import AnalystPriorityQueue from './components/AnalystPriorityQueue';
 import WeightTunerModal from './components/WeightTunerModal';
 import SimulatorModal from './components/SimulatorModal';
 import PrintableDossierModal from './components/PrintableDossierModal';
@@ -55,6 +57,20 @@ export default function App() {
   const [firmsStatus, setFirmsStatus] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Phase 4C.2: Change Detection & Transition Tracking State
+  const [changeData, setChangeData] = useState(null);
+  const [loadingChanges, setLoadingChanges] = useState(false);
+  const [changeError, setChangeError] = useState(null);
+  const [selectedChange, setSelectedChange] = useState(null);
+  const [isChangePanelOpen, setIsChangePanelOpen] = useState(false);
+  const [showChangeLayer, setShowChangeLayer] = useState(true);
+
+  // Phase 5.1: Analyst Priority Queue State
+  const [priorityQueue, setPriorityQueue] = useState([]);
+  const [loadingQueue, setLoadingQueue] = useState(false);
+  const [queueError, setQueueError] = useState(null);
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -101,10 +117,97 @@ export default function App() {
     }
   }, []);
 
+  const loadChangeData = useCallback(async () => {
+    setLoadingChanges(true);
+    setChangeError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/analytics/changes`);
+      if (!res.ok) throw new Error(`Change detection HTTP ${res.status}`);
+      const data = await res.json();
+      setChangeData(data);
+    } catch (err) {
+      console.error('Error loading change detection data:', err);
+      setChangeError(err.message || 'Unable to retrieve change analysis.');
+    } finally {
+      setLoadingChanges(false);
+    }
+  }, []);
+
+  const loadPriorityQueue = useCallback(async () => {
+    setLoadingQueue(true);
+    setQueueError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/clusters/priority-queue?limit=50`);
+      if (!res.ok) throw new Error(`Priority queue HTTP ${res.status}`);
+      const data = await res.json();
+      setPriorityQueue(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error loading priority queue:', err);
+      setQueueError(err.message || 'Unable to retrieve analyst priority queue.');
+    } finally {
+      setLoadingQueue(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadInitialData();
     loadClusters();
-  }, [loadInitialData, loadClusters]);
+    loadChangeData();
+    loadPriorityQueue();
+  }, [loadInitialData, loadClusters, loadChangeData, loadPriorityQueue]);
+
+  const totalChangesCount = useMemo(() => {
+    if (!changeData) return 0;
+    return (changeData.emerging_sources_count || 0) + (changeData.flagged_transitions_count || 0);
+  }, [changeData]);
+
+  const pendingQueueCount = useMemo(() => {
+    return priorityQueue.filter(
+      item => !item.review_status || item.review_status === 'UNREVIEWED'
+    ).length;
+  }, [priorityQueue]);
+
+  const handleSelectClusterFromQueue = (clusterId, coords) => {
+    const match = rawClusters.find(c => c.cluster_id === clusterId);
+    if (match) {
+      handleSelectCluster(match);
+    }
+    if (coords) {
+      setFlyToTarget(coords);
+    }
+  };
+
+  const handleOpenClusterReviewFromQueue = (clusterId, coords) => {
+    const match = rawClusters.find(c => c.cluster_id === clusterId);
+    if (match) {
+      handleSelectCluster(match);
+      setIsQueueOpen(false);
+    }
+    if (coords) {
+      setFlyToTarget(coords);
+    }
+  };
+
+  const handleReviewSaved = (clusterId) => {
+    loadPriorityQueue();
+    loadClusters();
+    showToast(`Analyst verification recorded for Cluster #${clusterId}`);
+  };
+
+  const handleSelectChange = (item) => {
+    setSelectedChange(item);
+    if (item.lat && item.lon) {
+      setFlyToTarget({ lat: item.lat, lon: item.lon });
+    }
+  };
+
+  const handleReviewClusterFromChange = (clusterId) => {
+    const match = processedClusters.find(c => c.cluster_id === clusterId);
+    if (match) {
+      handleSelectCluster(match);
+      setIsChangePanelOpen(false);
+    }
+  };
 
   // Recalculate clusters dynamically using client-tuned weights
   const processedClusters = useMemo(() => {
@@ -213,7 +316,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `SIH26162_thermal_clusters_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `IGNITRA_thermal_clusters_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -226,7 +329,7 @@ export default function App() {
     try {
       const geojson = clustersToGeoJSON(processedClusters);
       const dateStr = new Date().toISOString().slice(0, 10);
-      downloadGeoJSON(geojson, `SIH26162_thermal_clusters_${dateStr}.geojson`);
+      downloadGeoJSON(geojson, `IGNITRA_thermal_clusters_${dateStr}.geojson`);
       showToast(`GeoJSON FeatureCollection (${processedClusters.length} clusters) exported.`);
     } catch (err) {
       console.error("GeoJSON export error:", err);
@@ -239,7 +342,7 @@ export default function App() {
     if (!selectedCluster) return;
     try {
       const geojson = clustersToGeoJSON([selectedCluster]);
-      downloadGeoJSON(geojson, `SIH26162_cluster_${selectedCluster.cluster_id}.geojson`);
+      downloadGeoJSON(geojson, `IGNITRA_cluster_${selectedCluster.cluster_id}.geojson`);
       showToast(`GeoJSON Feature exported for Cluster #${selectedCluster.cluster_id}.`);
     } catch (err) {
       console.error("Single GeoJSON export error:", err);
@@ -258,7 +361,7 @@ export default function App() {
       {/* Top Tactical Header */}
       <TacticalHeader
         isRefreshing={isRefreshing}
-        onRefresh={() => { loadInitialData(); loadClusters(); }}
+        onRefresh={() => { loadInitialData(); loadClusters(); loadChangeData(); loadPriorityQueue(); }}
         onOpenTuner={() => setIsTunerOpen(true)}
         onOpenSimulator={() => setIsSimulatorOpen(true)}
         onExportCsv={handleExportAllCsv}
@@ -267,6 +370,18 @@ export default function App() {
         firmsStatus={firmsStatus}
         onOpenFirmsModal={() => setIsFirmsModalOpen(true)}
         totalDetections={summary?.total_detections || 407}
+        changeCount={totalChangesCount}
+        isChangePanelOpen={isChangePanelOpen}
+        onToggleChangePanel={() => {
+          setIsChangePanelOpen(prev => !prev);
+          if (!isChangePanelOpen && isQueueOpen) setIsQueueOpen(false);
+        }}
+        pendingQueueCount={pendingQueueCount}
+        isQueueOpen={isQueueOpen}
+        onToggleQueue={() => {
+          setIsQueueOpen(prev => !prev);
+          if (!isQueueOpen && isChangePanelOpen) setIsChangePanelOpen(false);
+        }}
       />
 
 
@@ -280,7 +395,7 @@ export default function App() {
           <button
             type="button"
             className="retry-btn"
-            onClick={() => { loadInitialData(); loadClusters(); }}
+            onClick={() => { loadInitialData(); loadClusters(); loadChangeData(); loadPriorityQueue(); }}
           >
             Retry Connection
           </button>
@@ -335,6 +450,11 @@ export default function App() {
           showOsmSites={showOsmSites}
           onToggleOsmSites={() => setShowOsmSites(!showOsmSites)}
           flyToTarget={flyToTarget}
+          changeData={changeData}
+          showChangeLayer={showChangeLayer}
+          onToggleChangeLayer={() => setShowChangeLayer(prev => !prev)}
+          selectedChange={selectedChange}
+          onSelectChange={handleSelectChange}
         />
 
         {/* Selected Cluster Intelligence Inspector (Level 3: Why?) */}
@@ -346,8 +466,35 @@ export default function App() {
             onFlyTo={(coords) => setFlyToTarget(coords)}
             onOpenPrintDossier={() => setIsDossierOpen(true)}
             onExportSingleGeoJson={handleExportSingleGeoJson}
+            onReviewSaved={handleReviewSaved}
           />
         )}
+
+        {/* Phase 4C.2: Change Detection & Transition Tracking Console */}
+        <ChangeDetectionPanel
+          isOpen={isChangePanelOpen}
+          onClose={() => setIsChangePanelOpen(false)}
+          changeData={changeData}
+          isLoading={loadingChanges}
+          error={changeError}
+          onRetry={loadChangeData}
+          selectedChange={selectedChange}
+          onSelectChange={handleSelectChange}
+          onReviewCluster={handleReviewClusterFromChange}
+        />
+
+        {/* Phase 5.1: Analyst Priority Queue Console */}
+        <AnalystPriorityQueue
+          isOpen={isQueueOpen}
+          onClose={() => setIsQueueOpen(false)}
+          queue={priorityQueue}
+          isLoading={loadingQueue}
+          error={queueError}
+          onRetry={loadPriorityQueue}
+          selectedClusterId={selectedCluster?.cluster_id}
+          onSelectCluster={handleSelectClusterFromQueue}
+          onOpenClusterReview={handleOpenClusterReviewFromQueue}
+        />
       </main>
 
       {/* Printable Analytical Intelligence Dossier Modal */}
@@ -381,6 +528,8 @@ export default function App() {
         onIngestionSuccess={(data) => {
           loadInitialData();
           loadClusters();
+          loadChangeData();
+          loadPriorityQueue();
           if (data.records_inserted > 0) {
             showToast(`Live FIRMS Ingestion Complete: +${data.records_inserted} observations, ${data.pipeline?.clusters_processed || data.records_valid} clusters updated`);
           } else {

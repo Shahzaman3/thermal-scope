@@ -4,6 +4,7 @@ import {
   Target,
   Sliders,
   Activity,
+  ListOrdered,
   Download,
   FileSpreadsheet,
   RotateCw,
@@ -26,7 +27,13 @@ export default function TacticalHeader({
   benchmarkRecall,
   firmsStatus,
   onOpenFirmsModal,
-  totalDetections = 407
+  totalDetections = 407,
+  changeCount = 0,
+  isChangePanelOpen = false,
+  onToggleChangePanel,
+  pendingQueueCount = 0,
+  isQueueOpen = false,
+  onToggleQueue
 }) {
   const [showStatusPopover, setShowStatusPopover] = useState(false);
   const popoverRef = useRef(null);
@@ -85,7 +92,7 @@ export default function TacticalHeader({
       <div className="header-branding">
         <div className="ntro-crest">
           <span className="crest-code">NTRO</span>
-          <span className="crest-sub">SIH26162</span>
+          <span className="crest-sub">IGNITRA</span>
         </div>
         <div className="branding-text">
           <h1 className="system-title">
@@ -228,6 +235,32 @@ export default function TacticalHeader({
         >
           <Satellite size={14} className="btn-icon-svg" />
           <span className="btn-text">FIRMS Ingest</span>
+        </button>
+
+        {/* Phase 4C.2: Change Detection Console Trigger */}
+        <button
+          type="button"
+          className={`tactical-btn action-btn change-btn ${isChangePanelOpen ? 'is-active' : ''}`}
+          onClick={onToggleChangePanel}
+          title="Inspect thermal activity changes across observation periods"
+          aria-label={`Change Detection: ${changeCount ?? 0} flagged items`}
+        >
+          <Activity size={14} className="btn-icon-svg" />
+          <span className="btn-text">Change Detection</span>
+          <span className="btn-counter-badge">{changeCount ?? 0}</span>
+        </button>
+
+        {/* Phase 5.1: Analyst Priority Queue Trigger */}
+        <button
+          type="button"
+          className={`tactical-btn action-btn queue-btn ${isQueueOpen ? 'is-active' : ''}`}
+          onClick={onToggleQueue}
+          title="Inspect analyst priority review queue and verification workflow"
+          aria-label={`Analyst Priority Queue: ${pendingQueueCount ?? 0} pending items`}
+        >
+          <ListOrdered size={14} className="btn-icon-svg" />
+          <span className="btn-text">Analyst Queue</span>
+          <span className="btn-counter-badge queue-counter-badge">{pendingQueueCount ?? 0}</span>
         </button>
 
         {/* Benchmark Recall Badge */}

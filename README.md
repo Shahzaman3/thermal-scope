@@ -1,4 +1,4 @@
-# SIH 2026 Prototype — Industrial Fire & Persistent Thermal Source Classifier
+# IGNITRA — AI-Based Detection and Classification of Industrial Fires and Persistent Thermal Sources Using NASA FIRMS, OSM & Satellite Data
 
 **Problem Statement SIH26162** | **Organization:** National Technical Research Organisation (NTRO)  
 **Theme:** Space Technology  
@@ -19,7 +19,7 @@
 | Persistent industrial sources | 8 |
 | Ambiguous / flagged | 0 |
 | Transient fire events | 9 |
-| Backend tests | 87 / 87 passing |
+| Backend tests | 107 / 107 passing |
 | Frontend production build | PASS |
 | Benchmark accuracy | 80.0% |
 
@@ -289,17 +289,18 @@ The dossier is an analytical decision-support document. It does not constitute a
 ### Backend Test Suite
 
 ```
-87 tests — 87 passed — 0 failed
+107 tests — 107 passed — 0 failed
 ```
 
 | Test module | Coverage area |
 | :--- | :--- |
-| `test_api.py` | REST endpoint correctness |
+| `test_api.py` | REST endpoint correctness, priority queue, analyst review workflow |
 | `test_classifier.py` | Feature math, normalization, scoring, thresholds, benchmark regression |
 | `test_clustering.py` | DBSCAN grouping, confidence pre-filter, database execution |
 | `test_database.py` | Schema, foreign keys, transactions, stats |
 | `test_firms_ingestion.py` | Record validation, HTTP error handling, operational states, zero-record handling, secret redaction |
 | `test_pipeline.py` | End-to-end pipeline execution, idempotency, data integrity |
+| `test_scheduler.py` | Background async monitoring, mutex locks, telemetry, thread safety |
 | `test_simulation.py` | What-if scenario evaluation |
 
 Test isolation: all destructive tests use temporary SQLite databases via pytest's `tmp_path` fixture. The production demonstration database (`backend/data/thermal_classifier.db`) is never written to during testing.
@@ -341,6 +342,11 @@ Classifier regression test: `test_baseline_metrics_regression` locks the benchma
 | `/api/clusters/{id}` | GET | Single cluster detail with feature vector and classification |
 | `/api/evaluation` | GET | Ground-truth benchmark metrics |
 | `/api/simulate-hotspot` | POST | What-if anomaly scenario evaluation |
+| `/api/v1/analytics/changes` | GET | Multi-temporal change detection (emerging, borderline, high variance) |
+| `/api/v1/clusters/priority-queue` | GET | Ranked analyst triage queue with review status |
+| `/api/v1/clusters/{id}/review` | GET | Retrieve stored analyst review assessment and notes |
+| `/api/v1/clusters/review` | POST | Submit or update analyst review assessment and notes |
+| `/api/v1/firms/ingest/history` | GET | Historical log of automated and manual FIRMS ingestion runs |
 
 Full interactive documentation available at `http://127.0.0.1:8000/docs` when the backend is running.
 
@@ -349,7 +355,7 @@ Full interactive documentation available at `http://127.0.0.1:8000/docs` when th
 ## 📁 Repository Structure
 
 ```
-thermal-scope/
+ignitra/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
@@ -359,7 +365,8 @@ thermal-scope/
 │   │   ├── services/
 │   │   │   ├── __init__.py
 │   │   │   ├── classifier_service.py      # Unified 6-feature math (extract, normalize, score, band)
-│   │   │   └── firms_ingestion_service.py # Live NASA FIRMS pull, validation, dedup, state tracking
+│   │   │   ├── firms_ingestion_service.py # Live NASA FIRMS pull, validation, dedup, state tracking
+│   │   │   └── scheduler_service.py       # Phase 4C.1 background refresh loop & IngestionGuard mutex
 │   │   └── api/
 │   │       ├── routes.py        # /api/* endpoints (clusters, summary, pipeline, ingest, data-status)
 │   │       └── simulate.py      # /api/simulate-hotspot (What-If engine)
@@ -397,6 +404,8 @@ thermal-scope/
 │   │   │   ├── ClusterDetailsPanel.jsx     # Analyst evidence cards, 6-feature vector, FRP time-series
 │   │   │   ├── HistoricalThermalAnalysis.jsx  # Multi-temporal FRP analytics (7D/14D/30D/ALL)
 │   │   │   ├── FirmsIngestionModal.jsx     # Live ingestion trigger and telemetry display
+│   │   │   ├── ChangeDetectionPanel.jsx    # Phase 4C.2 thermal activity change detection console
+│   │   │   ├── AnalystPriorityQueue.jsx    # Phase 5.1 analyst priority queue & triage workflow console
 │   │   │   ├── PrintableDossierModal.jsx   # Printable analytical dossier (A4)
 │   │   │   ├── WeightTunerModal.jsx        # Real-time sensitivity weight slider
 │   │   │   └── SimulatorModal.jsx          # What-If anomaly scenario simulator
@@ -408,7 +417,9 @@ thermal-scope/
 │   ├── scripts/
 │   │   ├── test_geojson.mjs
 │   │   ├── test_temporal_analytics.mjs
-│   │   └── verify_cluster_analytics.mjs
+│   │   ├── verify_cluster_analytics.mjs
+│   │   ├── verify_change_detection.mjs     # Phase 4C.2 change detection deterministic test
+│   │   └── verify_analyst_queue.mjs        # Phase 5.1 analyst queue deterministic verification test
 │   ├── .env.example                        # Safe placeholder template (commit-safe)
 │   ├── index.html
 │   └── package.json
@@ -428,20 +439,54 @@ All planned core and advanced operational phases are **100% Fully Implemented an
 - Sensor, product, and time-window source provenance tracking.
 - `GET /api/v1/firms/ingest/history` API and Ingestion Audit History console in UI modal.
 
-### Phase 4C.1 — Automated Refresh & Freshness Monitoring *(FULLY IMPLEMENTED)*
-- Background operational freshness tracking and telemetry state determination (`LIVE` $\rightarrow$ `STALE` $\rightarrow$ `ERROR`).
-- Configurable freshness threshold monitoring and alert notification states.
+### Phase 4C.1 — Automated Near-Real-Time FIRMS Monitoring & Refresh *(FULLY IMPLEMENTED & VERIFIED)*
+- **Lightweight Asynchronous Architecture:** Powered by FastAPI lifespan and an `asyncio` background task. Zero heavy broker dependencies (no Celery, Redis, or Kafka required).
+- **Offline-First Safety:** Disabled by default (`FIRMS_AUTO_REFRESH_ENABLED=false`) to ensure zero unexpected external API calls during normal local development and evaluation.
+- **Configurable Refresh Interval:** Configured via `FIRMS_AUTO_REFRESH_INTERVAL_MINUTES=60` with safe automatic clamping to prevent accidental satellite API quota exhaustion.
+- **Startup Protection & Graceful Startup:** Does not trigger an immediate NASA query on server boot; waits the configured interval before executing its first automated near-real-time ingestion cycle.
+- **Overlap & Concurrency Protection:** Thread-safe `IngestionGuard` mutex guarantees mutual exclusion between background automated refresh cycles and operator-initiated manual pulls (returning HTTP 409 Conflict if an ingestion is active).
+- **Resilient & Non-Crashing:** Ingestion or network failures are caught, logged in `firms_ingestion_runs`, and set operational status to `ERROR` while strictly preserving existing SQLite observations and allowing subsequent cycles to execute.
+- **Telemetry Exposure:** Real-time scheduler status (`auto_refresh_enabled`, `auto_refresh_interval_minutes`, `scheduler_running`, `last_scheduled_run`, `next_scheduled_run`, `current_ingestion_running`) exposed via `GET /api/firms/status` and visible in the modal.
+- **Manual Ingestion Preserved:** Manual operator ingestion via the NASA FIRMS modal remains fully available at all times.
 
-### Phase 4C.2 — Change Detection & New-Source Identification *(FULLY IMPLEMENTED)*
-- Spatial detection of newly emerging thermal sources outside registered cluster centroids (`GET /api/v1/analytics/changes`).
-- Borderline score transition tracking and high FRP variance flagging.
+### Phase 4C.2 — Thermal Activity Change Detection Visualization *(FULLY IMPLEMENTED & VERIFIED)*
+- **Mathematical Multi-Temporal Comparison:** Surfaces mathematically supported thermal activity changes between available satellite observation periods using `GET /api/v1/analytics/changes`.
+- **Supported Change Categories:**
+  1. *Emerging / New Thermal Sources*: Novel satellite detections situated beyond the spatial footprint of established baseline clusters.
+  2. *Borderline Score Transitions*: Clusters whose persistence score approaches the classification decision boundary (score 0.45 – 0.55), indicating potential operational shifts or intermediate burning profiles.
+  3. *High FRP Variance / Intensified Sources*: Clusters exhibiting substantial standard deviation or trend variance in Fire Radiative Power (FRP) across satellite overpasses.
+- **Dedicated Change Detection Panel (`ChangeDetectionPanel.jsx`):**
+  - Displays monitoring comparison window and latest observation timestamp.
+  - Four dynamic summary KPI chips (`TOTAL FLAGGED`, `EMERGING / NEW`, `HIGH FRP VARIANCE`, `BORDERLINE SCORE`) driven 100% by live API data.
+  - Category filter tabs (`ALL`, `EMERGING`, `HIGH VARIANCE`, `BORDERLINE`).
+  - Interactive change card list with badge indicators, coordinate metadata, and evidence rationale.
+  - Expanded analytical inspection card with key metrics and clear evidence explanation.
+  - "Review in Cluster Inspector" button seamlessly hands off cluster-mapped changes to the comprehensive Cluster Details Panel without duplicating logic.
+- **Map Integration Layer:**
+  - Dedicated Leaflet Change Detection layer with restrained static halo boundary treatments (cyan/blue diamond for emerging sources, orange halo for high FRP variance, amber boundary for borderline score transitions; no continuous pulsing animations).
+  - Synchronized selection: selecting a change in the panel pans/centers the map onto the exact coordinates, emphasizes the marker, and displays a compact analytical popup.
+  - Layer visibility toggle integrated into the map legend.
+- **Automated Refresh Coupling:** Integrated with Phase 4C.1 automated FIRMS monitoring to refresh change detection telemetry upon successful ingestion cycles.
+- **Strict Analytical Guardrails:** Designed strictly for scientific decision support and analyst review; explicitly avoids unverified claims or unsupported categories (e.g. no "confirmed fire", "confirmed explosion", or "guaranteed industrial incident").
+### Phase 5.1 — Analyst Priority Queue & Review Workflow *(FULLY IMPLEMENTED & VERIFIED)*
+- **Backend-Driven Priority Ranking:** Directly consumes the backend ranking from `GET /api/v1/clusters/priority-queue`, sorting clusters by analytical urgency without recalculating or modifying the scientific scoring model.
+- **Dedicated Global Analyst Queue Component (`AnalystPriorityQueue.jsx`):**
+  - **Dynamic KPI Summary Strip:** Real-time metrics for `TOTAL QUEUED`, `PENDING REVIEW`, `HIGH PRIORITY`, and `REVIEWED` derived from live queue responses.
+  - **Multi-Factor Filtering & Search:** Instant text search across cluster IDs and notes, combined with classification band dropdown filters (`All Bands`, `Persistent Industrial`, `Ambiguous`, `Transient Fire`).
+  - **Analytical Item Cards:** Each queue card displays backend priority rank badge (`#1`, `#2`...), cluster ID, persistence score, classification band, nearest industrial facility distance, review status tag, and analyst notes preview.
+  - **Seamless Inspector Handoff:** "Review in Cluster Inspector" button centers the map view on the cluster centroid, selects the cluster, and opens the full `ClusterDetailsPanel`.
+- **Integrated Review Workflow & Notes Persistence:**
+  - Connects to existing endpoints `GET /api/v1/clusters/{id}/review` and `POST /api/v1/clusters/review`.
+  - Supports all backend review statuses: `UNREVIEWED`, `UNDER_INVESTIGATION`, `VERIFIED_INDUSTRIAL`, `VERIFIED_WILDFIRE`, and `DISMISSED`.
+  - Analyst notes input field with character counter, sanitization, real-time submission feedback, and optimistic state updates.
+  - Submitting a review immediately synchronizes review badges across the priority queue, cluster inspector, and tactical header pending badge.
+- **Tactical Header Integration:**
+  - Dedicated "Analyst Queue" trigger button with `ListOrdered` icon in `TacticalHeader.jsx`.
+  - Dynamic pending item count badge indicating clusters awaiting analyst triage.
+- **Strict Decision-Support Paradigm:** Formulated strictly for analyst triage and evidence assessment; explicitly avoids automated fire confirmation, autonomous emergency dispatch, or non-scientific alerting.
 
-### Phase 5 — Explainability & Analyst Prioritization Workflow *(FULLY IMPLEMENTED)*
-- Prioritized analyst queue ranking clusters needing inspection (`GET /api/v1/clusters/priority-queue`).
-- Interactive review status verification (`VERIFIED_INDUSTRIAL`, `VERIFIED_WILDFIRE`, `UNDER_INVESTIGATION`) and analyst log notes in `ClusterDetailsPanel.jsx`.
-
-### Phase 6 — SIH Demo Hardening & Final Validation *(FULLY IMPLEMENTED)*
-- **90 / 90 backend pytest test cases passing**.
+### Automated Testing Baseline
+- **107 / 107 backend pytest test cases passing** (14 dedicated scheduler & operational tests added, 0 failures, 0 errors).
 - Production frontend Vite bundle verified with **0 errors**.
 
 ---

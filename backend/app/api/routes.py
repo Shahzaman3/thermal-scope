@@ -1,10 +1,11 @@
 from typing import List, Optional, Dict, Any
 # pyrefly: ignore [missing-import]
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 # pyrefly: ignore [missing-import]
 from ..database import get_db, get_db_stats
 from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse, IngestionHistoryResponse, AnalystReviewRequest, AnalystReviewResponse
 from ..services.firms_ingestion_service import get_ingestion_status, ingest_live_firms_data, get_ingestion_history, update_ingestion_run_pipeline, _state
+from ..services.scheduler_service import IngestionGuard
 from ..services.change_detection import get_change_detection_summary
 from ..services.analyst_service import submit_analyst_review, get_analyst_review_for_cluster, get_priority_review_queue
 import sys
@@ -227,7 +228,7 @@ def get_api_health_endpoint() -> Dict[str, Any]:
     firms_status = get_ingestion_status()
     return {
         "status": "ok",
-        "service": "SIH 2026 Industrial Fire & Persistent Thermal Source Classifier",
+        "service": "IGNITRA \u2014 Intelligent Geospatial Ignition & Thermal Recognition Architecture",
         "version": "1.0.0",
         "database": db_stats,
         "firms_service": "configured" if firms_status.get("configured") else "unconfigured",
@@ -246,99 +247,106 @@ def ingest_firms_endpoint(req: Optional[FirmsIngestRequest] = None) -> Dict[str,
     4. Automatically updates DBSCAN clustering and 6-feature classification if new observations are added.
     """
     params = req or FirmsIngestRequest()
-    ingest_result = ingest_live_firms_data(
-        days=params.days,
-        source=params.source,
-        bbox=params.bbox
-    )
+    try:
+        with IngestionGuard():
+            ingest_result = ingest_live_firms_data(
+                days=params.days,
+                source=params.source,
+                bbox=params.bbox
+            )
 
-    if ingest_result.get("status") != "success":
-        _state.pipeline_executed = False
-        _state.pipeline_status = "NOT_RUN"
-        return {
-            "status": "error",
-            "run_id": ingest_result.get("run_id"),
-            "source": ingest_result.get("source", "OFFLINE_DEMO"),
-            "operational_status": "ERROR",
-            "records_received": ingest_result.get("records_received", 0),
-            "records_valid": ingest_result.get("records_valid", 0),
-            "records_inserted": 0,
-            "records_skipped_duplicate": 0,
-            "records_rejected": ingest_result.get("records_rejected", 0),
-            "message": ingest_result.get("message", "Live ingestion failed. Existing data remains active."),
-            "latest_observation_datetime": None,
-            "latest_observation_utc": None,
-            "latest_observation_ist": None,
-            "last_successful_ingestion_utc": None,
-            "last_successful_ingestion_ist": None,
-            "pipeline_executed": False,
-            "pipeline_status": "NOT_RUN",
-            "pipeline": None
-        }
-
-    pipeline_summary = None
-    pipeline_executed = False
-    pipeline_status = "NOT_RUN"
-
-    if params.run_pipeline and ingest_result.get("records_inserted", 0) > 0:
-        if run_clustering and run_classification:
-            try:
-                cluster_res = run_clustering()
-                classify_res = run_classification()
-                pipeline_executed = True
-                pipeline_status = "COMPLETED"
-                pipeline_summary = {
-                    "clusters_processed": cluster_res.get("clusters_formed", 0),
-                    "classifications_updated": classify_res.get("total_clusters", 0),
-                    "classification_summary": {
-                        "persistent_industrial": classify_res.get("persistent_count", 0),
-                        "ambiguous_review": classify_res.get("ambiguous_count", 0),
-                        "transient_fire": classify_res.get("transient_count", 0)
-                    }
+            if ingest_result.get("status") != "success":
+                _state.pipeline_executed = False
+                _state.pipeline_status = "NOT_RUN"
+                return {
+                    "status": "error",
+                    "run_id": ingest_result.get("run_id"),
+                    "source": ingest_result.get("source", "OFFLINE_DEMO"),
+                    "operational_status": "ERROR",
+                    "records_received": ingest_result.get("records_received", 0),
+                    "records_valid": ingest_result.get("records_valid", 0),
+                    "records_inserted": 0,
+                    "records_skipped_duplicate": 0,
+                    "records_rejected": ingest_result.get("records_rejected", 0),
+                    "message": ingest_result.get("message", "Live ingestion failed. Existing data remains active."),
+                    "latest_observation_datetime": None,
+                    "latest_observation_utc": None,
+                    "latest_observation_ist": None,
+                    "last_successful_ingestion_utc": None,
+                    "last_successful_ingestion_ist": None,
+                    "pipeline_executed": False,
+                    "pipeline_status": "NOT_RUN",
+                    "pipeline": None
                 }
-            except Exception as e:
+
+            pipeline_summary = None
+            pipeline_executed = False
+            pipeline_status = "NOT_RUN"
+
+            if params.run_pipeline and ingest_result.get("records_inserted", 0) > 0:
+                if run_clustering and run_classification:
+                    try:
+                        cluster_res = run_clustering()
+                        classify_res = run_classification()
+                        pipeline_executed = True
+                        pipeline_status = "COMPLETED"
+                        pipeline_summary = {
+                            "clusters_processed": cluster_res.get("clusters_formed", 0),
+                            "classifications_updated": classify_res.get("total_clusters", 0),
+                            "classification_summary": {
+                                "persistent_industrial": classify_res.get("persistent_count", 0),
+                                "ambiguous_review": classify_res.get("ambiguous_count", 0),
+                                "transient_fire": classify_res.get("transient_count", 0)
+                            }
+                        }
+                    except Exception as e:
+                        pipeline_executed = False
+                        pipeline_status = "FAILED"
+                        pipeline_summary = {"error": f"Clustering/classification update error: {str(e)}"}
+                else:
+                    pipeline_status = "FAILED"
+            elif params.run_pipeline and ingest_result.get("records_inserted", 0) == 0:
+                # Zero new records inserted; existing clusters remain current and validated
                 pipeline_executed = False
-                pipeline_status = "FAILED"
-                pipeline_summary = {"error": f"Clustering/classification update error: {str(e)}"}
-        else:
-            pipeline_status = "FAILED"
-    elif params.run_pipeline and ingest_result.get("records_inserted", 0) == 0:
-        # Zero new records inserted; existing clusters remain current and validated
-        pipeline_executed = False
-        pipeline_status = "NOT_RUN"
+                pipeline_status = "NOT_RUN"
 
-    _state.pipeline_executed = pipeline_executed
-    _state.pipeline_status = pipeline_status
+            _state.pipeline_executed = pipeline_executed
+            _state.pipeline_status = pipeline_status
 
-    if ingest_result.get("run_id"):
-        update_ingestion_run_pipeline(
-            run_id=ingest_result["run_id"],
-            pipeline_status=pipeline_status
+            if ingest_result.get("run_id"):
+                update_ingestion_run_pipeline(
+                    run_id=ingest_result["run_id"],
+                    pipeline_status=pipeline_status
+                )
+
+            return {
+                "status": "success",
+                "run_id": ingest_result.get("run_id"),
+                "source": ingest_result["source"],
+                "operational_status": ingest_result.get("operational_status", "LIVE"),
+                "requested_window_days": ingest_result.get("requested_window_days", params.days),
+                "product_queried": ingest_result.get("product_queried", params.source or "ALL"),
+                "records_received": ingest_result["records_received"],
+                "records_valid": ingest_result["records_valid"],
+                "records_inserted": ingest_result["records_inserted"],
+                "records_skipped_duplicate": ingest_result["records_skipped_duplicate"],
+                "records_rejected": ingest_result["records_rejected"],
+                "message": ingest_result["message"],
+
+                "latest_observation_datetime": ingest_result.get("latest_observation_datetime"),
+                "latest_observation_utc": ingest_result.get("latest_observation_utc"),
+                "latest_observation_ist": ingest_result.get("latest_observation_ist"),
+                "last_successful_ingestion_utc": ingest_result.get("last_successful_ingestion_utc"),
+                "last_successful_ingestion_ist": ingest_result.get("last_successful_ingestion_ist"),
+                "pipeline_executed": pipeline_executed,
+                "pipeline_status": pipeline_status,
+                "pipeline": pipeline_summary
+            }
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An ingestion cycle is currently in progress. Please wait for the current run to complete."
         )
-
-    return {
-        "status": "success",
-        "run_id": ingest_result.get("run_id"),
-        "source": ingest_result["source"],
-        "operational_status": ingest_result.get("operational_status", "LIVE"),
-        "requested_window_days": ingest_result.get("requested_window_days", params.days),
-        "product_queried": ingest_result.get("product_queried", params.source or "ALL"),
-        "records_received": ingest_result["records_received"],
-        "records_valid": ingest_result["records_valid"],
-        "records_inserted": ingest_result["records_inserted"],
-        "records_skipped_duplicate": ingest_result["records_skipped_duplicate"],
-        "records_rejected": ingest_result["records_rejected"],
-        "message": ingest_result["message"],
-
-        "latest_observation_datetime": ingest_result.get("latest_observation_datetime"),
-        "latest_observation_utc": ingest_result.get("latest_observation_utc"),
-        "latest_observation_ist": ingest_result.get("latest_observation_ist"),
-        "last_successful_ingestion_utc": ingest_result.get("last_successful_ingestion_utc"),
-        "last_successful_ingestion_ist": ingest_result.get("last_successful_ingestion_ist"),
-        "pipeline_executed": pipeline_executed,
-        "pipeline_status": pipeline_status,
-        "pipeline": pipeline_summary
-    }
 
 
 @router.get("/v1/firms/ingest/history", tags=["NASA FIRMS Live Ingestion"])
@@ -429,10 +437,14 @@ def get_analyst_priority_queue(limit: int = Query(default=50, ge=1, le=500)) -> 
 @router.get("/clusters/{cluster_id}/review", tags=["Analyst Review Queue"])
 def get_cluster_review(cluster_id: int) -> Dict[str, Any]:
     """Retrieve review verification status and notes for a specific cluster."""
-    rev = get_analyst_review_for_cluster(cluster_id)
-    if not rev:
-        return {"cluster_id": cluster_id, "review_status": "UNREVIEWED", "notes": None, "analyst_name": "Analyst", "updated_at": None}
-    return rev
+    try:
+        return get_analyst_review_for_cluster(cluster_id)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to retrieve analyst review record.")
 
 
 @router.post("/v1/clusters/review", tags=["Analyst Review Queue"])
@@ -447,5 +459,9 @@ def post_cluster_review(req: AnalystReviewRequest) -> AnalystReviewResponse:
             analyst_name=req.analyst_name or "Analyst"
         )
         return AnalystReviewResponse(**res)
+    except KeyError as ke:
+        raise HTTPException(status_code=404, detail=str(ke))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to persist analyst review record.")

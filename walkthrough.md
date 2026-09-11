@@ -1,4 +1,4 @@
-# SIH 2026 Prototype Walkthrough: Industrial Fire & Persistent Thermal Source Classifier
+# IGNITRA — Project Walkthrough: Industrial Fire & Persistent Thermal Source Classifier
 
 **Problem Statement SIH26162** | **Theme:** Space Technology (NTRO)  
 **Region:** Jamshedpur–Odisha Industrial Belt, India  

@@ -153,6 +153,12 @@ class FirmsStatusResponse(BaseModel):
     error_category: Optional[str] = None
     last_error: Optional[str] = None
     message: str
+    auto_refresh_enabled: bool = False
+    auto_refresh_interval_minutes: int = 60
+    scheduler_running: bool = False
+    last_scheduled_run: Optional[str] = None
+    next_scheduled_run: Optional[str] = None
+    current_ingestion_running: bool = False
 
 class FirmsIngestionRun(BaseModel):
     id: int
@@ -179,14 +185,15 @@ class IngestionHistoryResponse(BaseModel):
 class AnalystReviewRequest(BaseModel):
     cluster_id: int
     review_status: str
-    notes: Optional[str] = None
-    analyst_name: Optional[str] = "Analyst"
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    analyst_name: Optional[str] = Field(default="Analyst", max_length=100)
 
 class AnalystReviewResponse(BaseModel):
     status: str
-    review_id: int
+    review_id: Optional[int] = None
     cluster_id: int
     review_status: str
     notes: Optional[str] = None
     analyst_name: str
     updated_at: str
+    has_review: bool = True

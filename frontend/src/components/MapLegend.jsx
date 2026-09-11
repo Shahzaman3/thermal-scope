@@ -12,7 +12,9 @@ export default function MapLegend({
   osmSitesCount,
   selectedBasemap,
   onSelectBasemap,
-  basemapOptions
+  basemapOptions,
+  showChangeLayer,
+  onToggleChangeLayer
 }) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -113,6 +115,29 @@ export default function MapLegend({
                 <div className="legend-item-sub">Day / Night passes</div>
               </div>
             </div>
+
+            {/* Change Detection Layer Toggle */}
+            {onToggleChangeLayer && (
+              <div
+                className={`legend-item legend-clickable ${showChangeLayer ? 'active' : 'inactive'}`}
+                onClick={onToggleChangeLayer}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleChangeLayer(); } }}
+                title="Toggle Phase 4C.2 Change Detection and Transition overlay"
+              >
+                <span className="legend-dot-symbol" style={{ backgroundColor: '#38bdf8', borderColor: '#38bdf8' }} />
+                <div className="legend-item-info">
+                  <div className="legend-item-name" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Change layer</span>
+                    <span className={`legend-toggle-pill ${showChangeLayer ? 'is-on' : 'is-off'}`}>
+                      {showChangeLayer ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="legend-item-sub">Emerging &amp; Transitions</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Basemap Selection */}
