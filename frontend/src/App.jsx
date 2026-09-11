@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Target, AlertTriangle, Info } from 'lucide-react';
+import TacticalHeader from './components/TacticalHeader';
+import TacticalSummaryBar from './components/TacticalSummaryBar';
 import MapView from './components/MapView';
 import ClusterDetailsPanel from './components/ClusterDetailsPanel';
 import WeightTunerModal from './components/WeightTunerModal';
 import SimulatorModal from './components/SimulatorModal';
-import { Factory, AlertTriangle, Flame, Download, Eye, RefreshCw, Sliders, Award, Sparkles } from 'lucide-react';
+import PrintableDossierModal from './components/PrintableDossierModal';
+import FirmsIngestionModal from './components/FirmsIngestionModal';
+import { clustersToGeoJSON, downloadGeoJSON } from './utils/geojsonExport';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
@@ -21,9 +26,12 @@ const BENCHMARK_TARGETS = [
   { name: 'Rourkela Steel Plant (SAIL)', lat: 22.2285, lon: 84.8690, band: 'Persistent' },
   { name: 'Tata Steel Kalinganagar Complex', lat: 20.9650, lon: 86.0120, band: 'Persistent' },
   { name: 'Talcher Super Thermal (NTPC)', lat: 20.9150, lon: 85.2200, band: 'Persistent' },
+  { name: 'Neelachal Ispat Nigam (NINL)', lat: 20.9420, lon: 85.9800, band: 'Persistent' },
   { name: 'Barbil Sponge Iron & Mining Hub', lat: 22.1150, lon: 85.3950, band: 'Ambiguous' },
-  { name: 'Similipal Forest Wildfire Area', lat: 21.8200, lon: 86.3500, band: 'Transient' },
-  { name: 'Saranda Forest Seasonal Burn', lat: 22.3100, lon: 85.2800, band: 'Transient' }
+  { name: 'Keonjhar Pellet Plant Area', lat: 21.6300, lon: 85.5800, band: 'Ambiguous' },
+  { name: 'Similipal Forest Perimeter Wildfire', lat: 21.8200, lon: 86.3500, band: 'Transient' },
+  { name: 'Saranda Forest Seasonal Burn', lat: 22.3100, lon: 85.2800, band: 'Transient' },
+  { name: 'Mayurbhanj Scrubland Fire Area', lat: 22.0500, lon: 86.7200, band: 'Transient' }
 ];
 
 export default function App() {
@@ -37,44 +45,66 @@ export default function App() {
   const [bandFilter, setBandFilter] = useState('ALL');
   const [showOsmSites, setShowOsmSites] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [flyToTarget, setFlyToTarget] = useState(null);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [isTunerOpen, setIsTunerOpen] = useState(false);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+  const [isDossierOpen, setIsDossierOpen] = useState(false);
+  const [isFirmsModalOpen, setIsFirmsModalOpen] = useState(false);
+  const [firmsStatus, setFirmsStatus] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
 
-  // Fetch initial telemetry and ground-truth validation metrics
-  const loadInitialData = async () => {
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Fetch initial telemetry, ground-truth validation metrics, and live FIRMS status
+  const loadInitialData = useCallback(async () => {
     setIsRefreshing(true);
+    setLoadError(null);
     try {
-      const [sumRes, osmRes, evalRes] = await Promise.all([
-        fetch(`${API_BASE}/api/summary`).then((r) => r.json()),
-        fetch(`${API_BASE}/api/osm-sites?limit=250`).then((r) => r.json()),
-        fetch(`${API_BASE}/api/evaluation`).then((r) => r.json()).catch(() => null)
+      const [sumRes, osmRes, evalRes, firmsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/summary`).then((r) => {
+          if (!r.ok) throw new Error(`Summary HTTP ${r.status}`);
+          return r.json();
+        }),
+        fetch(`${API_BASE}/api/osm-sites?limit=250`).then((r) => {
+          if (!r.ok) throw new Error(`OSM HTTP ${r.status}`);
+          return r.json();
+        }),
+        fetch(`${API_BASE}/api/evaluation`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/api/firms/status`).then((r) => r.json()).catch(() => null)
       ]);
       setSummary(sumRes);
       setOsmSites(osmRes || []);
       setEvaluationMetrics(evalRes);
+      if (firmsRes) setFirmsStatus(firmsRes);
     } catch (err) {
-      console.error('Error fetching initial data:', err);
+      console.error('Error fetching initial telemetry:', err);
+      setLoadError(err.message || 'Unable to communicate with local SQLite backend API.');
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
-  const loadClusters = async () => {
+  const loadClusters = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/clusters`);
+      if (!res.ok) throw new Error(`Clusters HTTP ${res.status}`);
       const data = await res.json();
       setRawClusters(data || []);
     } catch (err) {
       console.error('Error fetching clusters:', err);
+      setLoadError(err.message || 'Failed to retrieve cluster list from API.');
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadInitialData();
     loadClusters();
-  }, []);
+  }, [loadInitialData, loadClusters]);
 
   // Recalculate clusters dynamically using client-tuned weights
   const processedClusters = useMemo(() => {
@@ -131,8 +161,8 @@ export default function App() {
     setLoadingDetail(true);
     try {
       const res = await fetch(`${API_BASE}/api/clusters/${cluster.cluster_id}`);
+      if (!res.ok) throw new Error(`Cluster detail HTTP ${res.status}`);
       const data = await res.json();
-      // Apply dynamic score if present
       if (data && data.classification) {
         data.classification.persistence_score = cluster.persistence_score;
         data.classification.band_label = cluster.band_label;
@@ -150,13 +180,14 @@ export default function App() {
     const match = processedClusters.find(c => {
       const dLat = Math.abs(c.centroid_lat - target.lat);
       const dLon = Math.abs(c.centroid_lon - target.lon);
-      return (dLat + dLon) < 0.03;
+      return (dLat + dLon) < 0.035;
     });
     if (match) {
       handleSelectCluster(match);
     }
   };
 
+  // CSV Export for all clusters
   const handleExportAllCsv = () => {
     if (!processedClusters || processedClusters.length === 0) return;
     const headers = [
@@ -182,216 +213,119 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `NTRO_Regional_Thermal_Clusters_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute("download", `SIH26162_thermal_clusters_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    showToast("CSV intelligence export created successfully.");
+  };
+
+  // GeoJSON Export for all clusters (RFC 7946)
+  const handleExportAllGeoJson = () => {
+    if (!processedClusters || processedClusters.length === 0) return;
+    try {
+      const geojson = clustersToGeoJSON(processedClusters);
+      const dateStr = new Date().toISOString().slice(0, 10);
+      downloadGeoJSON(geojson, `SIH26162_thermal_clusters_${dateStr}.geojson`);
+      showToast(`GeoJSON FeatureCollection (${processedClusters.length} clusters) exported.`);
+    } catch (err) {
+      console.error("GeoJSON export error:", err);
+      showToast("Error generating GeoJSON export.");
+    }
+  };
+
+  // Single Cluster GeoJSON Export
+  const handleExportSingleGeoJson = () => {
+    if (!selectedCluster) return;
+    try {
+      const geojson = clustersToGeoJSON([selectedCluster]);
+      downloadGeoJSON(geojson, `SIH26162_cluster_${selectedCluster.cluster_id}.geojson`);
+      showToast(`GeoJSON Feature exported for Cluster #${selectedCluster.cluster_id}.`);
+    } catch (err) {
+      console.error("Single GeoJSON export error:", err);
+      showToast("Error generating single cluster GeoJSON.");
+    }
   };
 
   const handleClosePanel = () => {
     setSelectedCluster(null);
     setClusterDetail(null);
+    setIsDossierOpen(false);
   };
 
   return (
     <div className="app-container">
-      {/* Top Tactical Navbar */}
-      <header className="navbar">
-        <div className="brand-section">
-          <span className="ntro-badge">NTRO SIH26162</span>
-          <div>
-            <div className="brand-title">
-              Industrial Fire & Persistent Thermal Classifier
-            </div>
-            <div className="brand-subtitle">
-              Jamshedpur–Odisha Belt • NASA FIRMS + OSM Fusion
-            </div>
+      {/* Top Tactical Header */}
+      <TacticalHeader
+        isRefreshing={isRefreshing}
+        onRefresh={() => { loadInitialData(); loadClusters(); }}
+        onOpenTuner={() => setIsTunerOpen(true)}
+        onOpenSimulator={() => setIsSimulatorOpen(true)}
+        onExportCsv={handleExportAllCsv}
+        onExportGeoJson={handleExportAllGeoJson}
+        benchmarkRecall={evaluationMetrics?.industrial_recall_pct}
+        firmsStatus={firmsStatus}
+        onOpenFirmsModal={() => setIsFirmsModalOpen(true)}
+        totalDetections={summary?.total_detections || 407}
+      />
+
+
+      {/* Global Error Alert Banner if backend unreachable */}
+      {loadError && (
+        <div className="system-error-banner" role="alert">
+          <AlertTriangle size={14} className="error-icon-svg" />
+          <div className="error-message">
+            <b>Backend Connection Notice:</b> {loadError} Ensure the FastAPI backend is running at <code>{API_BASE}</code>.
           </div>
-        </div>
-
-        {/* Global Summary KPIs */}
-        <div className="stats-bar">
-          <div className="stat-pill" title="Total Raw FIRMS Detections Ingested">
-            <span className="stat-label">Raw Hotspots</span>
-            <span className="stat-val">{summary?.total_detections || 407}</span>
-          </div>
-
-          <div className="stat-pill" title="Formed ~1km Spatial Clusters">
-            <span className="stat-label">Clusters</span>
-            <span className="stat-val">{processedClusters.length}</span>
-          </div>
-
-          <div className="stat-pill" style={{ borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-            <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Factory size={12} /> Persistent
-            </span>
-            <span className="stat-val" style={{ color: '#34d399' }}>
-              {dynamicCounts.persistent}
-            </span>
-          </div>
-
-          <div className="stat-pill" style={{ borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-            <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <AlertTriangle size={12} /> Ambiguous
-            </span>
-            <span className="stat-val" style={{ color: '#fbbf24' }}>
-              {dynamicCounts.ambiguous}
-            </span>
-          </div>
-
-          <div className="stat-pill" style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-            <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Flame size={12} /> Transient
-            </span>
-            <span className="stat-val" style={{ color: '#f87171' }}>
-              {dynamicCounts.transient}
-            </span>
-          </div>
-
-          {/* Benchmark Accuracy Badge */}
-          {evaluationMetrics && (
-            <div
-              className="stat-pill"
-              onClick={() => setIsTunerOpen(true)}
-              style={{ cursor: 'pointer', borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.08)' }}
-              title="Click to view full benchmark validation and tune weights"
-            >
-              <Award size={13} style={{ color: '#38bdf8' }} />
-              <span style={{ color: '#38bdf8', fontWeight: 700 }}>Recall: {evaluationMetrics.industrial_recall_pct}%</span>
-            </div>
-          )}
-
-          {/* Quick Target Fly-To Selector */}
-          <div style={{ position: 'relative' }}>
-            <select
-              className="filter-btn"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid var(--border-subtle)',
-                color: '#fff',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '11px',
-                fontWeight: 600
-              }}
-              defaultValue=""
-              onChange={(e) => {
-                const target = BENCHMARK_TARGETS.find(t => t.name === e.target.value);
-                if (target) handleQuickJump(target);
-              }}
-            >
-              <option value="" disabled>🎯 Jump to Target Facility...</option>
-              {BENCHMARK_TARGETS.map(t => (
-                <option key={t.name} value={t.name} style={{ background: '#0f172a', color: '#fff' }}>
-                  {t.band === 'Persistent' ? '🟢' : (t.band === 'Ambiguous' ? '🟡' : '🔴')} {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Interactive Weight Sensitivity Tuner Button */}
           <button
-            className="filter-btn"
-            onClick={() => setIsTunerOpen(true)}
-            title="Open Interactive Feature Weight Tuner Modal"
-            style={{ border: '1px solid var(--border-subtle)', background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }}
-          >
-            <Sliders size={13} />
-            <span>Tune Weights</span>
-          </button>
-
-          {/* Interactive What-If Hotspot Simulator Button */}
-          <button
-            className="filter-btn"
-            onClick={() => setIsSimulatorOpen(true)}
-            title="Simulate a hypothetical thermal anomaly scenario"
-            style={{ border: '1px solid rgba(168, 85, 247, 0.4)', background: 'rgba(168, 85, 247, 0.12)', color: '#c084fc' }}
-          >
-            <Sparkles size={13} />
-            <span>Simulate Anomaly</span>
-          </button>
-
-          {/* Global CSV Export Button */}
-          <button
-            className="filter-btn"
-            onClick={handleExportAllCsv}
-            title="Export Classified Clusters (CSV Report for NTRO)"
-            style={{ border: '1px solid var(--border-subtle)' }}
-          >
-            <Download size={13} />
-            <span>Export CSV</span>
-          </button>
-
-          {/* Offline Database Guarantee Indicator */}
-          <div className="offline-ready-badge" title="Running 100% offline from local SQLite database">
-            <span className="pulse-dot"></span>
-            <span>SQLITE OFFLINE</span>
-          </div>
-
-          <button
-            className="filter-btn"
+            type="button"
+            className="retry-btn"
             onClick={() => { loadInitialData(); loadClusters(); }}
-            title="Refresh Data from Local DB"
           >
-            <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
+            Retry Connection
           </button>
         </div>
-      </header>
+      )}
 
-      {/* Main Workspace Area */}
-      <main className="workspace">
-        {/* Floating Filter Tabs above Map */}
-        <div className="map-floating-controls">
-          <button
-            className={`filter-btn ${bandFilter === 'ALL' ? 'active' : ''}`}
-            onClick={() => setBandFilter('ALL')}
+      {/* Summary KPI Area (Level 1: What is happening?) */}
+      <TacticalSummaryBar
+        totalDetections={summary?.total_detections || 407}
+        totalClusters={processedClusters.length}
+        persistentCount={dynamicCounts.persistent}
+        ambiguousCount={dynamicCounts.ambiguous}
+        transientCount={dynamicCounts.transient}
+        osmSitesCount={osmSites.length}
+        activeFilter={bandFilter}
+        onSelectFilter={setBandFilter}
+      />
+
+      {/* Main Geospatial Workspace */}
+      <main className="workspace" role="main">
+        {/* Floating Target Jump Selector (Level 4: Fast Navigation) */}
+        <div className="floating-target-selector" aria-label="Facility Quick Navigation">
+          <label htmlFor="target-jump-select" className="selector-label">
+            <Target size={13} className="selector-icon-svg" />
+            <span className="selector-text">TARGET JUMP:</span>
+          </label>
+          <select
+            id="target-jump-select"
+            className="tactical-select"
+            defaultValue=""
+            onChange={(e) => {
+              const target = BENCHMARK_TARGETS.find(t => t.name === e.target.value);
+              if (target) handleQuickJump(target);
+            }}
           >
-            All Clusters
-            <span className="btn-pill-count">{processedClusters.length}</span>
-          </button>
-
-          <button
-            className={`filter-btn persistent ${bandFilter === 'Persistent industrial source' ? 'active' : ''}`}
-            onClick={() => setBandFilter('Persistent industrial source')}
-          >
-            <Factory size={13} />
-            Persistent
-            <span className="btn-pill-count">{dynamicCounts.persistent}</span>
-          </button>
-
-          <button
-            className={`filter-btn ambiguous ${bandFilter === 'Ambiguous / flagged for review' ? 'active' : ''}`}
-            onClick={() => setBandFilter('Ambiguous / flagged for review')}
-          >
-            <AlertTriangle size={13} />
-            Ambiguous
-            <span className="btn-pill-count">{dynamicCounts.ambiguous}</span>
-          </button>
-
-          <button
-            className={`filter-btn transient ${bandFilter === 'Transient fire event' ? 'active' : ''}`}
-            onClick={() => setBandFilter('Transient fire event')}
-          >
-            <Flame size={13} />
-            Transient
-            <span className="btn-pill-count">{dynamicCounts.transient}</span>
-          </button>
-
-          <div style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
-
-          <button
-            className={`filter-btn ${showOsmSites ? 'active' : ''}`}
-            onClick={() => setShowOsmSites(!showOsmSites)}
-            title="Toggle OSM Industrial site reference pins"
-          >
-            <Eye size={13} />
-            <span>OSM Industry ({osmSites.length})</span>
-          </button>
+            <option value="" disabled>Select industrial or reference site...</option>
+            {BENCHMARK_TARGETS.map((t) => (
+              <option key={t.name} value={t.name}>
+                [{t.band}] {t.name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Leaflet Geospatial Map */}
+        {/* Geospatial Map Canvas */}
         <MapView
           clusters={visibleClusters}
           selectedCluster={selectedCluster}
@@ -399,20 +333,32 @@ export default function App() {
           onSelectCluster={handleSelectCluster}
           osmSites={osmSites}
           showOsmSites={showOsmSites}
+          onToggleOsmSites={() => setShowOsmSites(!showOsmSites)}
           flyToTarget={flyToTarget}
         />
 
-        {/* Feature Inspector Side Panel */}
+        {/* Selected Cluster Intelligence Inspector (Level 3: Why?) */}
         {selectedCluster && (
           <ClusterDetailsPanel
             detail={clusterDetail}
             onClose={handleClosePanel}
             loading={loadingDetail}
+            onFlyTo={(coords) => setFlyToTarget(coords)}
+            onOpenPrintDossier={() => setIsDossierOpen(true)}
+            onExportSingleGeoJson={handleExportSingleGeoJson}
           />
         )}
       </main>
 
-      {/* Interactive Sensitivity Weight Tuner Modal */}
+      {/* Printable Analytical Intelligence Dossier Modal */}
+      <PrintableDossierModal
+        isOpen={isDossierOpen}
+        onClose={() => setIsDossierOpen(false)}
+        detail={clusterDetail}
+        onPrint={() => showToast("Sending dossier to print...")}
+      />
+
+      {/* Sensitivity Weight Tuner Modal */}
       <WeightTunerModal
         isOpen={isTunerOpen}
         onClose={() => setIsTunerOpen(false)}
@@ -421,12 +367,38 @@ export default function App() {
         evaluationMetrics={evaluationMetrics}
       />
 
-      {/* Interactive What-If Hotspot Simulator Modal */}
+      {/* What-If Anomaly Simulator Modal */}
       <SimulatorModal
         isOpen={isSimulatorOpen}
         onClose={() => setIsSimulatorOpen(false)}
         onFlyTo={(coords) => setFlyToTarget(coords)}
       />
+
+      {/* NASA FIRMS Live Ingestion Modal */}
+      <FirmsIngestionModal
+        isOpen={isFirmsModalOpen}
+        onClose={() => setIsFirmsModalOpen(false)}
+        onIngestionSuccess={(data) => {
+          loadInitialData();
+          loadClusters();
+          if (data.records_inserted > 0) {
+            showToast(`Live FIRMS Ingestion Complete: +${data.records_inserted} observations, ${data.pipeline?.clusters_processed || data.records_valid} clusters updated`);
+          } else {
+            showToast(`Live FIRMS Request Successful: all ${data.records_valid} observations already present in local dataset.`);
+          }
+        }}
+
+        firmsStatus={firmsStatus}
+        refreshFirmsStatus={loadInitialData}
+      />
+
+      {/* Lightweight Operational Toast Feedback */}
+      {toastMessage && (
+        <div className="tactical-toast" role="status" aria-live="polite">
+          <Info size={14} className="toast-icon-svg" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,5 +23,13 @@ yarn-error.log*
 *.swp
 *.swo
 
+# Environment variables & secrets (Never commit real keys)
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
 # Explicitly ensure SQLite offline database snapshot is tracked
 !backend/data/thermal_classifier.db
+.coverage

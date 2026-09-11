@@ -99,11 +99,11 @@ def run_clustering():
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Clear existing clusters for idempotent rerun
+        # Clear existing clusters for idempotent rerun (nullify child FK references first)
+        cursor.execute("UPDATE firms_detections SET cluster_id = NULL;")
         cursor.execute("DELETE FROM cluster_classifications;")
         cursor.execute("DELETE FROM cluster_features;")
         cursor.execute("DELETE FROM hotspot_clusters;")
-        cursor.execute("UPDATE firms_detections SET cluster_id = NULL;")
 
         # Group detections by cluster
         cluster_detections_map = {}
@@ -143,6 +143,12 @@ def run_clustering():
                 cursor.execute("UPDATE firms_detections SET cluster_id = ? WHERE id = ?", (cid, det["id"]))
 
     print(f"Successfully populated {len(cluster_detections_map)} clusters into 'hotspot_clusters' table.")
+    return {
+        "raw_detections": len(rows),
+        "gated_detections": len(gated_detections),
+        "dropped_detections": dropped_count,
+        "clusters_formed": len(cluster_detections_map)
+    }
 
 
 if __name__ == "__main__":

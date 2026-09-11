@@ -2,18 +2,29 @@ from typing import List, Optional, Dict, Any
 # pyrefly: ignore [missing-import]
 from fastapi import APIRouter, HTTPException, Query
 # pyrefly: ignore [missing-import]
-from ..database import get_db
+from ..database import get_db, get_db_stats
+from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse
+from ..services.firms_ingestion_service import get_ingestion_status, ingest_live_firms_data, _state
 import sys
 from pathlib import Path
 
-# Add scripts directory for evaluate module
+# Add scripts directory for evaluate, clustering, and classification modules
 scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 try:
-    # pyrefly: ignore [missing-import]
     from evaluate import run_evaluation
 except ImportError:
     run_evaluation = None
+
+try:
+    from cluster_hotspots import run_clustering
+except ImportError:
+    run_clustering = None
+
+try:
+    from classify import run_classification
+except ImportError:
+    run_classification = None
 
 router = APIRouter(prefix="/api", tags=["Clusters & Classifications"])
 
@@ -199,3 +210,181 @@ def get_osm_sites(limit: int = 200) -> List[Dict[str, Any]]:
         """, (limit,))
         rows = cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+@router.get("/firms/status", response_model=FirmsStatusResponse, tags=["NASA FIRMS Live Ingestion"])
+def get_firms_status_endpoint() -> Dict[str, Any]:
+    """Return operational ingestion status, provenance, and configuration availability."""
+    return get_ingestion_status()
+
+
+@router.get("/health", response_model=HealthResponse, tags=["Health"])
+def get_api_health_endpoint() -> Dict[str, Any]:
+    """Lightweight operational health endpoint verifying DB connection, FIRMS service, and pipeline readiness."""
+    db_stats = get_db_stats()
+    firms_status = get_ingestion_status()
+    return {
+        "status": "ok",
+        "service": "SIH 2026 Industrial Fire & Persistent Thermal Source Classifier",
+        "version": "1.0.0",
+        "database": db_stats,
+        "firms_service": "configured" if firms_status.get("configured") else "unconfigured",
+        "pipeline": "available" if (run_clustering and run_classification) else "unavailable",
+        "operational_status": firms_status.get("operational_status", "OFFLINE")
+    }
+
+
+@router.post("/firms/ingest", response_model=FirmsIngestResponse, tags=["NASA FIRMS Live Ingestion"])
+def ingest_firms_endpoint(req: Optional[FirmsIngestRequest] = None) -> Dict[str, Any]:
+    """
+    Trigger user-initiated live NASA FIRMS near real-time thermal anomaly ingestion:
+    1. Authenticates securely via backend environment (never exposes MAP_KEY).
+    2. Retrieves and validates observations for the Jamshedpur-Odisha industrial corridor.
+    3. Deduplicates against existing SQLite observations.
+    4. Automatically updates DBSCAN clustering and 6-feature classification if new observations are added.
+    """
+    params = req or FirmsIngestRequest()
+    ingest_result = ingest_live_firms_data(
+        days=params.days,
+        source=params.source,
+        bbox=params.bbox
+    )
+
+    if ingest_result.get("status") != "success":
+        _state.pipeline_executed = False
+        _state.pipeline_status = "NOT_RUN"
+        return {
+            "status": "error",
+            "source": ingest_result.get("source", "OFFLINE_DEMO"),
+            "operational_status": "ERROR",
+            "records_received": ingest_result.get("records_received", 0),
+            "records_valid": ingest_result.get("records_valid", 0),
+            "records_inserted": 0,
+            "records_skipped_duplicate": 0,
+            "records_rejected": ingest_result.get("records_rejected", 0),
+            "message": ingest_result.get("message", "Live ingestion failed. Existing data remains active."),
+            "latest_observation_datetime": None,
+            "latest_observation_utc": None,
+            "latest_observation_ist": None,
+            "last_successful_ingestion_utc": None,
+            "last_successful_ingestion_ist": None,
+            "pipeline_executed": False,
+            "pipeline_status": "NOT_RUN",
+            "pipeline": None
+        }
+
+    pipeline_summary = None
+    pipeline_executed = False
+    pipeline_status = "NOT_RUN"
+
+    if params.run_pipeline and ingest_result.get("records_inserted", 0) > 0:
+        if run_clustering and run_classification:
+            try:
+                cluster_res = run_clustering()
+                classify_res = run_classification()
+                pipeline_executed = True
+                pipeline_status = "COMPLETED"
+                pipeline_summary = {
+                    "clusters_processed": cluster_res.get("clusters_formed", 0),
+                    "classifications_updated": classify_res.get("total_clusters", 0),
+                    "classification_summary": {
+                        "persistent_industrial": classify_res.get("persistent_count", 0),
+                        "ambiguous_review": classify_res.get("ambiguous_count", 0),
+                        "transient_fire": classify_res.get("transient_count", 0)
+                    }
+                }
+            except Exception as e:
+                pipeline_executed = False
+                pipeline_status = "FAILED"
+                pipeline_summary = {"error": f"Clustering/classification update error: {str(e)}"}
+        else:
+            pipeline_status = "FAILED"
+    elif params.run_pipeline and ingest_result.get("records_inserted", 0) == 0:
+        # Zero new records inserted; existing clusters remain current and validated
+        pipeline_executed = False
+        pipeline_status = "NOT_RUN"
+
+    _state.pipeline_executed = pipeline_executed
+    _state.pipeline_status = pipeline_status
+
+    return {
+        "status": "success",
+        "source": ingest_result["source"],
+        "operational_status": ingest_result.get("operational_status", "LIVE"),
+        "requested_window_days": ingest_result.get("requested_window_days", params.days),
+        "product_queried": ingest_result.get("product_queried", params.source or "ALL"),
+        "records_received": ingest_result["records_received"],
+        "records_valid": ingest_result["records_valid"],
+        "records_inserted": ingest_result["records_inserted"],
+        "records_skipped_duplicate": ingest_result["records_skipped_duplicate"],
+        "records_rejected": ingest_result["records_rejected"],
+        "message": ingest_result["message"],
+
+        "latest_observation_datetime": ingest_result.get("latest_observation_datetime"),
+        "latest_observation_utc": ingest_result.get("latest_observation_utc"),
+        "latest_observation_ist": ingest_result.get("latest_observation_ist"),
+        "last_successful_ingestion_utc": ingest_result.get("last_successful_ingestion_utc"),
+        "last_successful_ingestion_ist": ingest_result.get("last_successful_ingestion_ist"),
+        "pipeline_executed": pipeline_executed,
+        "pipeline_status": pipeline_status,
+        "pipeline": pipeline_summary
+    }
+
+
+@router.post("/pipeline/run", tags=["Pipeline"])
+def run_pipeline(ingest_live: bool = Query(default=False, description="Optionally pull latest NASA FIRMS NRT data before pipeline execution")) -> Dict[str, Any]:
+    """
+    Trigger the complete thermal anomaly processing pipeline:
+    1. (Optional) Ingest live NASA FIRMS detections if ingest_live=True
+    2. Confidence pre-filter gating & DBSCAN spatial clustering (~1km)
+    3. 6-feature vector extraction & min-max normalization via classifier service
+    4. Composite persistence scoring & 3-tier band classification
+    """
+    if not run_clustering or not run_classification:
+        raise HTTPException(
+            status_code=503,
+            detail="Pipeline processing modules are unavailable on the server"
+        )
+
+    ingest_report = None
+    if ingest_live:
+        ingest_report = ingest_live_firms_data(days=2)
+
+    try:
+        # Step 1: Spatial clustering
+        cluster_res = run_clustering()
+        if not cluster_res or "clusters_formed" not in cluster_res:
+            raise HTTPException(
+                status_code=500,
+                detail="Clustering stage failed to produce valid spatial clusters"
+            )
+
+        # Step 2: Feature extraction & classification
+        classify_res = run_classification()
+        if not classify_res or "total_clusters" not in classify_res:
+            raise HTTPException(
+                status_code=500,
+                detail="Classification stage failed to evaluate feature vectors"
+            )
+
+        return {
+            "status": "success",
+            "message": "Thermal classification pipeline executed successfully",
+            "ingest_report": ingest_report,
+            "detections_processed": cluster_res.get("raw_detections", 0),
+            "detections_passed_gate": cluster_res.get("gated_detections", 0),
+            "clusters_processed": cluster_res.get("clusters_formed", 0),
+            "classifications_updated": classify_res.get("total_clusters", 0),
+            "classification_summary": {
+                "persistent_industrial": classify_res.get("persistent_count", 0),
+                "ambiguous_review": classify_res.get("ambiguous_count", 0),
+                "transient_fire": classify_res.get("transient_count", 0)
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred during pipeline execution."
+        )

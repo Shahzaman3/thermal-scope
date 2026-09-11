@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Generator, Dict, Any
+from typing import Generator, Dict, Any, Optional
 
 # Root data directory
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,9 +11,10 @@ DB_PATH = DATA_DIR / "thermal_classifier.db"
 
 
 @contextmanager
-def get_db() -> Generator[sqlite3.Connection, None, None]:
-    """Context manager for SQLite database connection."""
-    conn = sqlite3.connect(str(DB_PATH))
+def get_db(custom_path: Optional[Path] = None) -> Generator[sqlite3.Connection, None, None]:
+    """Context manager for SQLite database connection with test database isolation support."""
+    target_path = str(custom_path or DB_PATH)
+    conn = sqlite3.connect(target_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     try:
@@ -26,9 +27,9 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
         conn.close()
 
 
-def init_db() -> None:
+def init_db(custom_path: Optional[Path] = None) -> None:
     """Initialize SQLite database with the 5 required core tables and indexes."""
-    with get_db() as conn:
+    with get_db(custom_path) as conn:
         cursor = conn.cursor()
 
         # 1. Raw NASA FIRMS Detections
@@ -126,8 +127,9 @@ def init_db() -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_class_score ON cluster_classifications(persistence_score);")
 
 
-def get_db_stats() -> Dict[str, Any]:
+def get_db_stats(custom_path: Optional[Path] = None) -> Dict[str, Any]:
     """Retrieve row counts and file size stats for database tables."""
+    target_path = Path(custom_path) if custom_path else DB_PATH
     tables = [
         "firms_detections",
         "osm_industrial_sites",
@@ -136,7 +138,7 @@ def get_db_stats() -> Dict[str, Any]:
         "cluster_classifications"
     ]
     counts = {}
-    with get_db() as conn:
+    with get_db(target_path) as conn:
         cursor = conn.cursor()
         for tbl in tables:
             try:
@@ -145,9 +147,9 @@ def get_db_stats() -> Dict[str, Any]:
             except sqlite3.OperationalError:
                 counts[tbl] = None
 
-    file_size_bytes = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    file_size_bytes = target_path.stat().st_size if target_path.exists() else 0
     return {
-        "db_path": str(DB_PATH),
+        "db_path": str(target_path),
         "db_size_bytes": file_size_bytes,
         "table_counts": counts
     }

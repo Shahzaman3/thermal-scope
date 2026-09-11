@@ -8,6 +8,9 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     database: Dict[str, Any]
+    firms_service: Optional[str] = "unconfigured"
+    pipeline: Optional[str] = "available"
+    operational_status: Optional[str] = "OFFLINE"
 
 
 class FirmsDetectionItem(BaseModel):
@@ -74,3 +77,78 @@ class ClusterDetail(BaseModel):
     radius_meters: Optional[float] = None
     features: Optional[ClusterFeatureVector] = None
     classification: Optional[ClusterClassificationItem] = None
+
+
+class ClusterItem(BaseModel):
+    cluster_id: int
+    centroid_lat: float
+    centroid_lon: float
+    detection_count: int
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    radius_meters: Optional[float] = None
+    features: Optional[ClusterFeatureVector] = None
+    classification: Optional[ClusterClassificationItem] = None
+
+
+class FirmsIngestRequest(BaseModel):
+    days: int = Field(default=2, ge=1, le=5, description="Days of satellite observations to request (1-5)")
+    source: Optional[str] = Field(default=None, description="Specific sensor (e.g., VIIRS_SNPP_NRT) or None for all primary sensors")
+    bbox: Optional[str] = Field(default=None, description="Geographic extent: min_lon,min_lat,max_lon,max_lat")
+    run_pipeline: bool = Field(default=True, description="Automatically trigger DBSCAN clustering and 6-feature classification")
+
+
+class FirmsIngestResponse(BaseModel):
+    status: str
+    source: str
+    operational_status: str = "LIVE"
+    requested_window_days: Optional[int] = None
+    product_queried: Optional[str] = None
+    records_received: int
+    records_valid: int
+    records_inserted: int
+    records_skipped_duplicate: int
+    records_rejected: int
+    message: str
+    latest_observation_datetime: Optional[str] = None
+    latest_observation_utc: Optional[str] = None
+    latest_observation_ist: Optional[str] = None
+    last_successful_ingestion_utc: Optional[str] = None
+    last_successful_ingestion_ist: Optional[str] = None
+    pipeline_executed: bool = False
+    pipeline_status: Optional[str] = None
+    pipeline: Optional[Dict[str, Any]] = None
+
+
+
+class FirmsStatusResponse(BaseModel):
+    source: str
+    provenance: str = "OFFLINE_DEMO"
+    operational_status: str = "OFFLINE"  # LIVE | STALE | OFFLINE | ERROR
+    is_live: bool = False
+    configured: bool = False
+    last_attempt: Optional[str] = None
+    last_attempt_utc: Optional[str] = None
+    last_attempt_ist: Optional[str] = None
+    last_success: Optional[str] = None
+    last_successful_ingestion: Optional[str] = None
+    last_successful_ingestion_utc: Optional[str] = None
+    last_successful_ingestion_ist: Optional[str] = None
+    latest_observation_datetime: Optional[str] = None
+    latest_observation_utc: Optional[str] = None
+    latest_observation_ist: Optional[str] = None
+    observation_age_minutes: Optional[float] = None
+    observation_age_hours: Optional[float] = None
+    observation_freshness_label: Optional[str] = None
+    requested_window_days: Optional[int] = None
+    product_queried: Optional[str] = None
+    records_received: int = 0
+    records_valid: int = 0
+    records_inserted: int = 0
+    records_skipped: int = 0
+    records_rejected: int = 0
+    pipeline_executed: bool = False
+    pipeline_status: Optional[str] = None  # COMPLETED | NOT_RUN | FAILED | None
+    error_category: Optional[str] = None
+    last_error: Optional[str] = None
+    message: str

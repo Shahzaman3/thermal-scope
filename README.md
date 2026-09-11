@@ -16,6 +16,8 @@ This prototype provides an **explainable, continuous 6-feature mathematical clas
 ### Key Architectural Highlights
 - **100% Offline Resilience:** Evaluated and verified to run with **zero external API calls** during judging. Satellite detections and OSM facilities are snapshotted in a single portable SQLite database (`backend/data/thermal_classifier.db`).
 - **Explainable Multi-Factor Vector:** Avoids crude binary proximity heuristics; computes a continuous weighted persistence score ($\text{score} \in [0, 1]$) based on spatial, temporal, radiometric, and diurnal characteristics.
+- **Historical Trend & Multi-Temporal FRP Analytics (Phase 3C):** Integrated chronological inspection tab in the cluster inspector with selectable time windows (`7D`, `14D`, `30D`, `ALL`), interactive SVG FRP timeline, active days and observation density metrics, descriptive trend classification, and chronological pass logging.
+  > *Note on Methodology:* Descriptive temporal indicators contextualize satellite pass history and do not replace the authoritative 6-feature classifier persistence score. Satellite observations are intermittent and do not represent continuous ground monitoring.
 - **Interactive Decision-Support Platform:** Real-time **Sensitivity Weight Tuner** modal and **What-If Anomaly Simulator** allowing intelligence analysts and evaluators to test hypothetical scenarios live.
 
 ---
@@ -108,10 +110,40 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ### 4. Run Pipeline & Evaluation Offline (Optional)
 ```bash
 cd backend
+# Run database smoke and schema integrity check
+python3 scripts/test_phase1.py
+
+# Re-run clustering, feature extraction, and classification
 python3 scripts/cluster_hotspots.py
 python3 scripts/classify.py
 python3 scripts/evaluate.py
+
+# Or trigger pipeline via API:
+# curl -X POST http://127.0.0.1:8000/api/pipeline/run
 ```
+
+---
+
+## 📡 Live NASA FIRMS Ingestion Layer (Phase 4A)
+
+The system supports a **safe, configurable live NASA FIRMS ingestion layer** that retrieves near real-time (NRT) satellite thermal anomaly observations and integrates them seamlessly through the existing DBSCAN and 6-feature classification pipeline.
+
+### Configuration
+Live satellite ingestion is managed securely on the backend via environment variables:
+```bash
+# In backend/.env
+FIRMS_MAP_KEY=your_nasa_firms_map_key_here
+FIRMS_BBOX=84.5,20.5,86.8,23.2
+FIRMS_DEFAULT_DAYS=2
+FIRMS_DEFAULT_SOURCE=ALL
+```
+
+### Operational & Security Principles
+- **Backend-Only Security:** The NASA FIRMS `MAP_KEY` is loaded exclusively inside Python on the server. It is **never** sent to the client browser, never embedded in the frontend bundle, and never returned in API payloads.
+- **Strict Deduplication:** Incoming observations are validated (coordinates within valid ranges, non-negative FRP, valid ISO timestamps) and checked for uniqueness against existing records via `(latitude, longitude, acq_date, acq_time, satellite)`.
+- **Additive & Non-Destructive:** Live ingestion never drops or deletes existing detections. The known-good 407-record demonstration dataset remains permanently preserved.
+- **100% Offline Resilience:** If the API key is missing, network is unavailable, or NASA rate-limits/errors occur (HTTP 401, 403, 429, 500, timeout), the system cleanly halts the ingestion attempt without committing partial data, presents an informative status message to the operator, and continues operating seamlessly on the offline baseline.
+- **Clear Data Provenance:** The tactical header and ingestion modal explicitly distinguish between `DEMO DATASET / OFFLINE ANALYSIS` and `● LIVE NASA FIRMS` to ensure complete analytical integrity for evaluators and defense analysts.
 
 ---
 
@@ -130,15 +162,18 @@ sih-thermal-classifier/
 │   │   ├── main.py              # FastAPI app instance, CORS, lifespan DB init
 │   │   ├── database.py          # SQLite connection manager, 5-table DDL schema
 │   │   ├── models.py            # Pydantic data schemas
+│   │   ├── services/
+│   │   │   └── classifier_service.py # Unified feature normalization & scoring math
 │   │   └── api/
-│   │       ├── routes.py        # /api/summary, /api/clusters, /api/evaluation
+│   │       ├── routes.py        # /api/summary, /api/clusters, /api/pipeline/run
 │   │       └── simulate.py      # /api/simulate-hotspot (What-If engine)
 │   ├── scripts/
 │   │   ├── fetch_firms.py       # NASA FIRMS data ingestion + regional sample fallback
 │   │   ├── fetch_osm.py         # OSM Overpass industrial sites ingestion + benchmark
 │   │   ├── cluster_hotspots.py  # DBSCAN Haversine spatial clustering (~1km)
 │   │   ├── classify.py          # 6-feature vector computation & persistence scoring
-│   │   └── evaluate.py          # Ground-truth accuracy & confusion matrix evaluator
+│   │   ├── evaluate.py          # Ground-truth accuracy & confusion matrix evaluator
+│   │   └── test_phase1.py       # Database schema & referential integrity test
 │   ├── data/
 │   │   └── thermal_classifier.db # Populated offline SQLite database snapshot
 │   ├── Dockerfile               # Production container image

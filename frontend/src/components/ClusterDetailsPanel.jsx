@@ -1,11 +1,33 @@
 import React, { useState } from 'react';
-import { X, Flame, Factory, AlertTriangle, ShieldCheck, MapPin, BarChart2, Radio, Download, Activity, ExternalLink } from 'lucide-react';
+import {
+  Crosshair,
+  Printer,
+  Download,
+  FileCode,
+  X,
+  Layers,
+  Clock,
+  Radio,
+  CheckCircle2,
+  MapPin,
+  Scale,
+  Building2
+} from 'lucide-react';
+import HistoricalThermalAnalysis from './HistoricalThermalAnalysis';
 
+/**
+ * Tactical FRP Time Series Chart
+ * Clean axis lines, threshold markers, and hover feedback.
+ */
 function FrpTimeSeriesChart({ detections, band }) {
   const [hoveredPoint, setHoveredPoint] = useState(null);
 
   if (!detections || detections.length === 0) {
-    return <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '12px' }}>No temporal pass data available.</div>;
+    return (
+      <div className="chart-empty-state">
+        No chronological satellite detections recorded for this cluster.
+      </div>
+    );
   }
 
   // Sort detections chronologically
@@ -16,14 +38,14 @@ function FrpTimeSeriesChart({ detections, band }) {
   const avgFrp = frpValues.reduce((a, b) => a + b, 0) / (frpValues.length || 1);
 
   // SVG dimensions
-  const width = 380;
+  const width = 400;
   const height = 110;
-  const padX = 24;
-  const padY = 16;
+  const padX = 28;
+  const padY = 14;
   const chartW = width - padX * 2;
   const chartH = height - padY * 2;
 
-  // Compute point coordinates
+  // Compute coordinates
   const points = sorted.map((d, i) => {
     const x = sorted.length === 1 ? padX + chartW / 2 : padX + (i / (sorted.length - 1)) * chartW;
     const y = padY + chartH - ((parseFloat(d.frp || 0) - minFrp) / (maxFrp - minFrp || 1)) * chartH;
@@ -42,102 +64,107 @@ function FrpTimeSeriesChart({ detections, band }) {
   const avgY = padY + chartH - ((avgFrp - minFrp) / (maxFrp - minFrp || 1)) * chartH;
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px' }}>
-        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Activity size={12} /> FRP Emission Curve ({sorted.length} passes)
-        </span>
-        <span style={{ fontFamily: 'var(--font-mono)', color: '#fff', fontSize: '10px' }}>
-          Avg: <b style={{ color: strokeColor }}>{avgFrp.toFixed(1)} MW</b> | Max: {maxFrp.toFixed(1)} MW
-        </span>
+    <div className="frp-chart-container">
+      <div className="chart-header-row">
+        <div>
+          <div className="chart-main-title">Observed FRP Chronology</div>
+          <div className="chart-subtitle">Fire Radiative Power (MW) across {sorted.length} satellite passes</div>
+        </div>
+        <div className="chart-stat-pill">
+          <span>Mean: <b style={{ color: strokeColor }}>{avgFrp.toFixed(1)} MW</b></span>
+          <span className="pill-dot">•</span>
+          <span>Peak: <b>{maxFrp.toFixed(1)} MW</b></span>
+        </div>
       </div>
 
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: 'rgba(0,0,0,0.25)', borderRadius: '8px' }}>
-        <defs>
-          <linearGradient id="areaGlow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={strokeColor} stopOpacity="0.35" />
-            <stop offset="100%" stopColor={strokeColor} stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
+      <div className="chart-svg-wrapper">
+        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="frp-svg" role="img" aria-label="FRP Emission Time Series Chart">
+          <defs>
+            <linearGradient id="frpAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={strokeColor} stopOpacity="0.25" />
+              <stop offset="100%" stopColor={strokeColor} stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
 
-        {/* Grid lines */}
-        <line x1={padX} y1={padY} x2={width - padX} y2={padY} stroke="rgba(255,255,255,0.06)" strokeDasharray="2 2" />
-        <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(255,255,255,0.08)" />
+          {/* Upper reference grid line */}
+          <line x1={padX} y1={padY} x2={width - padX} y2={padY} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+          {/* Baseline grid line */}
+          <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(255,255,255,0.12)" />
 
-        {/* Average FRP baseline */}
-        <line x1={padX} y1={avgY} x2={width - padX} y2={avgY} stroke={strokeColor} strokeOpacity="0.4" strokeDasharray="3 3" />
+          {/* Mean reference line */}
+          <line x1={padX} y1={avgY} x2={width - padX} y2={avgY} stroke={strokeColor} strokeOpacity="0.45" strokeDasharray="3 3" />
+          <text x={padX + 2} y={Math.max(9, avgY - 3)} fill={strokeColor} fontSize="8" fontFamily="var(--font-mono)" opacity="0.8">
+            MEAN {avgFrp.toFixed(1)} MW
+          </text>
 
-        {/* Area fill */}
-        {areaD && <path d={areaD} fill="url(#areaGlow)" />}
+          {/* Area fill */}
+          {areaD && <path d={areaD} fill="url(#frpAreaGrad)" />}
 
-        {/* Line */}
-        {pathD && <path d={pathD} fill="none" stroke={strokeColor} strokeWidth="2" />}
+          {/* Smooth line */}
+          {pathD && <path d={pathD} fill="none" stroke={strokeColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />}
 
-        {/* Circles */}
-        {points.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.x}
-            cy={p.y}
-            r={hoveredPoint === i ? 5 : (sorted.length > 30 ? 2.5 : 3.5)}
-            fill={p.d.daynight === 'D' ? '#fbbf24' : '#818cf8'}
-            stroke="#0f172a"
-            strokeWidth="1"
-            style={{ cursor: 'pointer', transition: 'r 0.15s ease' }}
-            onMouseEnter={() => setHoveredPoint(i)}
-            onMouseLeave={() => setHoveredPoint(null)}
-          />
-        ))}
-      </svg>
+          {/* Data Points */}
+          {points.map((p, i) => {
+            const isDay = p.d.daynight === 'D';
+            const isHovered = hoveredPoint === i;
+            return (
+              <circle
+                key={i}
+                cx={p.x}
+                cy={p.y}
+                r={isHovered ? 4.5 : 2.5}
+                fill={isDay ? '#fbbf24' : '#818cf8'}
+                stroke="#090d16"
+                strokeWidth={isHovered ? 1.5 : 1}
+                className="chart-dot"
+                onMouseEnter={() => setHoveredPoint(i)}
+                onMouseLeave={() => setHoveredPoint(null)}
+              />
+            );
+          })}
+        </svg>
 
-      {/* Point Hover Tooltip */}
-      {hoveredPoint !== null && points[hoveredPoint] && (
-        <div style={{
-          position: 'absolute',
-          top: '28px',
-          left: `${Math.min(240, Math.max(10, points[hoveredPoint].x - 50))}px`,
-          background: 'rgba(15, 23, 42, 0.95)',
-          border: '1px solid var(--border-active)',
-          borderRadius: '6px',
-          padding: '4px 8px',
-          fontSize: '10px',
-          fontFamily: 'var(--font-mono)',
-          color: '#fff',
-          pointerEvents: 'none',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          zIndex: 20
-        }}>
-          <div>FRP: <b>{points[hoveredPoint].d.frp} MW</b></div>
-          <div style={{ color: 'var(--text-muted)' }}>{points[hoveredPoint].d.acq_date} {points[hoveredPoint].d.acq_time} ({points[hoveredPoint].d.daynight === 'D' ? 'Day' : 'Night'})</div>
-        </div>
-      )}
-
-      {/* Legend */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginTop: '4px', padding: '0 4px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <span><span style={{ color: '#fbbf24' }}>●</span> Day Pass</span>
-          <span><span style={{ color: '#818cf8' }}>●</span> Night Pass</span>
-        </div>
-        <span>{sorted[0]?.acq_date} → {sorted[sorted.length - 1]?.acq_date}</span>
+        {/* Hover Tooltip */}
+        {hoveredPoint !== null && points[hoveredPoint] && (
+          <div
+            className="chart-hover-tip"
+            style={{
+              left: `${Math.min(width - 120, Math.max(10, points[hoveredPoint].x - 50))}px`,
+              top: `${Math.max(2, points[hoveredPoint].y - 42)}px`
+            }}
+          >
+            <div><b>{points[hoveredPoint].d.frp || 0} MW</b> ({points[hoveredPoint].d.daynight === 'D' ? 'Day' : 'Night'})</div>
+            <div>{points[hoveredPoint].d.acq_date} {points[hoveredPoint].d.acq_time || ''}</div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export default function ClusterDetailsPanel({ detail, onClose, loading }) {
-  const [activeTab, setActiveTab] = useState('features'); // 'features' | 'detections'
+/**
+ * Cluster Assessment Panel — Professional GIS Intelligence Workstation
+ * Decision-support view providing scientific evidence, 6-feature formulation breakdown,
+ * and contextual analysis for human analysts.
+ */
+export default function ClusterDetailsPanel({
+  detail,
+  onClose,
+  loading,
+  onFlyTo,
+  onOpenPrintDossier,
+  onExportSingleGeoJson
+}) {
+  const [activeTab, setActiveTab] = useState('features'); // 'features' | 'temporal' | 'detections'
 
   if (loading) {
     return (
-      <div className="inspector-panel">
-        <div className="panel-header">
-          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading cluster telemetry...</div>
-          <button className="close-btn" onClick={onClose}><X size={16} /></button>
+      <aside className="inspector-panel is-loading" aria-label="Loading Cluster Assessment">
+        <div className="panel-loading-state">
+          <div className="loading-spinner-ring" />
+          <div className="loading-label">Retrieving cluster assessment telemetry...</div>
         </div>
-        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Fetching offline SQLite feature vector...
-        </div>
-      </div>
+      </aside>
     );
   }
 
@@ -145,39 +172,34 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
     return null;
   }
 
-  const { cluster, classification, features, detections, closest_industrial_sites } = detail;
+  const { cluster, classification, features, closest_industrial_sites, detections } = detail;
   const score = classification ? classification.persistence_score : 0;
   const band = classification ? classification.band_label : 'Unknown';
 
-  const getBandClass = () => {
-    if (band === 'Persistent industrial source') return 'persistent';
-    if (band === 'Ambiguous / flagged for review') return 'ambiguous';
-    return 'transient';
-  };
-
-  const getBandIcon = () => {
-    if (band === 'Persistent industrial source') return <Factory size={16} />;
-    if (band === 'Ambiguous / flagged for review') return <AlertTriangle size={16} />;
-    return <Flame size={16} />;
-  };
+  const isPersistent = band === 'Persistent industrial source';
+  const isAmbiguous = band === 'Ambiguous / flagged for review';
 
   const getBarColor = (val) => {
-    if (val >= 0.7) return '#10b981';
-    if (val >= 0.4) return '#f59e0b';
+    if (val >= 0.70) return '#10b981';
+    if (val >= 0.40) return '#f59e0b';
     return '#ef4444';
   };
 
+  const getBandClass = () => {
+    if (isPersistent) return 'persistent';
+    if (isAmbiguous) return 'ambiguous';
+    return 'transient';
+  };
+
+  // Export full cluster intelligence dossier as JSON
   const handleExportJson = () => {
     const reportData = {
-      project: "SIH 2026 - Problem Statement SIH26162",
-      theme: "NTRO Space Technology",
-      dossier_type: "Hotspot Cluster Inspection Dossier",
-      generated_at: new Date().toISOString(),
+      assessment_type: "Satellite Thermal Anomaly Cluster Assessment",
       cluster_id: cluster.cluster_id,
       classification: {
         persistence_score: score,
         band_label: band,
-        confidence_gate: "PASSED"
+        confidence_gate: "PASSED (Radiometric Quality Verified)"
       },
       coordinates: {
         centroid_lat: cluster.centroid_lat,
@@ -198,9 +220,50 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `NTRO_Cluster_${cluster.cluster_id}_Dossier.json`;
+    a.download = `Cluster_${cluster.cluster_id}_Intelligence_Assessment.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Scientific analyst explanation derived from observed features
+  const getAnalystAssessment = () => {
+    if (isPersistent) {
+      return (
+        <div className="analyst-explanation persistent">
+          <div className="explanation-title">Observed Evidence & Assessment</div>
+          <p>
+            Thermal observations are consistent with a <b>persistent industrial source</b>. Detections demonstrate continuous multi-week recurrence ({cluster.detection_count} satellite passes), balanced day/night observations, and close proximity to registered heavy industrial infrastructure.
+          </p>
+          <div className="analyst-action-note">
+            <b>Recommended analyst action:</b> Filter from emergency wildfire suppression queue; maintain passive facility thermal baseline.
+          </div>
+        </div>
+      );
+    }
+    if (isAmbiguous) {
+      return (
+        <div className="analyst-explanation ambiguous">
+          <div className="explanation-title">Observed Evidence & Assessment</div>
+          <p>
+            Thermal observations exhibit an <b>intermediate persistence profile</b> (score: {(score * 100).toFixed(1)}%). Physical indicators suggest sporadic rotary kiln flaring, mining operations, or localized burning on an industrial periphery requiring analyst review.
+          </p>
+          <div className="analyst-action-note">
+            <b>Recommended analyst action:</b> Retain in analyst queue for multispectral verification or field confirmation.
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="analyst-explanation transient">
+        <div className="explanation-title">Observed Evidence & Assessment</div>
+        <p>
+          Thermal observations demonstrate rapid temporal decay, low recurrence, and wide spatial separation from industrial infrastructure. Characteristics are consistent with a <b>transient fire event</b> (wildfire or agricultural crop residue burn).
+        </p>
+        <div className="analyst-action-note">
+          <b>Recommended analyst action:</b> Route to forest / agricultural fire management assessment.
+        </div>
+      </div>
+    );
   };
 
   const featureConfigs = [
@@ -208,9 +271,9 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
       key: 'recurrence_count',
       name: 'Recurrence Count',
       weight: '25%',
-      raw: `${features?.recurrence_count ?? cluster.detection_count} detections`,
+      raw: `${features?.recurrence_count ?? cluster.detection_count} passes`,
       norm: features?.recurrence_count_norm ?? 0,
-      desc: 'Count of thermal anomalies across time window'
+      desc: 'Normalized observation count across the corridor monitoring window'
     },
     {
       key: 'recurrence_regularity',
@@ -218,7 +281,7 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
       weight: '20%',
       raw: `CV = ${(features?.recurrence_regularity ?? 0).toFixed(2)}`,
       norm: features?.regularity_norm ?? 0,
-      desc: 'Coefficient of variation of time-gaps (low CV = periodic/industrial)'
+      desc: 'Inverted coefficient of variation of inter-pass time gaps (low CV indicates continuous 24/7 operations)'
     },
     {
       key: 'dist_to_nearest_industrial',
@@ -226,15 +289,15 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
       weight: '20%',
       raw: `${((features?.dist_to_nearest_industrial ?? 0) / 1000).toFixed(2)} km`,
       norm: features?.dist_to_industrial_norm ?? 0,
-      desc: 'Distance to nearest OSM industrial entity (closer = higher score)'
+      desc: 'Distance to registered OSM industrial site geometry (inverted: closer = higher score)'
     },
     {
       key: 'spatial_stability',
       name: 'Spatial Stability',
       weight: '15%',
-      raw: `Spread σ = ${(features?.spatial_stability ?? 0).toFixed(1)}m`,
+      raw: `σ = ${(features?.spatial_stability ?? 0).toFixed(1)} m`,
       norm: features?.spatial_stability_norm ?? 0,
-      desc: 'Standard deviation of coordinates (tight centroid footprint)'
+      desc: 'Centroid tightness (low spread confirms stationary point emitter vs roaming fire front)'
     },
     {
       key: 'frp_trend',
@@ -242,7 +305,7 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
       weight: '10%',
       raw: `Slope = ${(features?.frp_trend ?? 0).toFixed(3)} MW/hr`,
       norm: features?.frp_trend_norm ?? 0,
-      desc: 'Slope of Fire Radiative Power (flat slope = steady furnace/flare)'
+      desc: 'Slope of Fire Radiative Power (flat slope indicates sustained furnace emission vs rapid decay)'
     },
     {
       key: 'day_night_ratio',
@@ -250,133 +313,202 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
       weight: '10%',
       raw: `${Math.round((features?.day_night_ratio ?? 0) * 100)}% Day / ${Math.round((1 - (features?.day_night_ratio ?? 0)) * 100)}% Night`,
       norm: features?.day_night_ratio_norm ?? 0,
-      desc: '24/7 industrial plants emit both day & night (~0.5 ratio)'
+      desc: 'Closeness to balanced diurnal distribution (continuous industrial facilities operate day and night)'
     }
   ];
 
   return (
-    <div className="inspector-panel" id="cluster-inspector-panel">
-      {/* Header */}
+    <aside className="inspector-panel" id="cluster-inspector-panel" aria-label="Thermal Cluster Assessment Panel">
+      {/* Top Header */}
       <div className="panel-header">
-        <div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            NTRO CLUSTER INSPECTOR
-          </div>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>Cluster #{cluster.cluster_id}</span>
-          </div>
+        <div className="panel-header-titles">
+          <span className="panel-pretitle">CLUSTER ASSESSMENT</span>
+          <h2 className="panel-main-title">Cluster #{cluster.cluster_id}</h2>
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button className="close-btn" onClick={handleExportJson} title="Export NTRO Dossier (JSON)">
-            <Download size={15} />
+        <div className="panel-header-actions">
+          {onFlyTo && (
+            <button
+              type="button"
+              className="panel-tool-btn"
+              onClick={() => onFlyTo({ lat: cluster.centroid_lat, lon: cluster.centroid_lon })}
+              title="Center map on cluster"
+              aria-label="Center map"
+            >
+              <Crosshair size={14} />
+            </button>
+          )}
+          {onOpenPrintDossier && (
+            <button
+              type="button"
+              className="panel-tool-btn print-tool-btn"
+              onClick={onOpenPrintDossier}
+              title="Open Printable Intelligence Dossier"
+              aria-label="Printable Dossier"
+            >
+              <Printer size={14} />
+            </button>
+          )}
+          {onExportSingleGeoJson && (
+            <button
+              type="button"
+              className="panel-tool-btn"
+              onClick={onExportSingleGeoJson}
+              title="Export cluster as GeoJSON Feature"
+              aria-label="Export Cluster GeoJSON"
+            >
+              <Download size={14} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="panel-tool-btn"
+            onClick={handleExportJson}
+            title="Export assessment telemetry as JSON"
+            aria-label="Export JSON"
+          >
+            <FileCode size={14} />
           </button>
-          <button className="close-btn" onClick={onClose} title="Close Panel">
-            <X size={16} />
+          <button
+            type="button"
+            className="panel-tool-btn close-btn"
+            onClick={onClose}
+            title="Close assessment panel"
+            aria-label="Close Panel"
+          >
+            <X size={14} />
           </button>
         </div>
       </div>
 
       <div className="panel-content">
-        {/* Score & Band Hero */}
-        <div className={`score-hero ${getBandClass()}`}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* Persistence Score & Band Card */}
+        <section className={`score-hero ${getBandClass()}`} aria-label="Persistence Score Assessment">
+          <div className="score-hero-header">
             <span className={`band-pill ${getBandClass()}`}>
-              {getBandIcon()} {band}
+              {isPersistent ? 'Persistent industrial source' : (isAmbiguous ? 'Review / ambiguous' : 'Transient fire event')}
             </span>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              WEIGHTED SCORE
+            <span className="score-threshold-context">
+              {isPersistent ? 'Threshold: ≥ 0.70' : (isAmbiguous ? 'Threshold: 0.40–0.69' : 'Threshold: < 0.40')}
             </span>
           </div>
 
           <div className="score-display-row">
-            <span className="score-number" style={{ color: getBarColor(score) }}>
-              {(score * 100).toFixed(1)}%
-            </span>
-            <span className="score-scale">/ 100% (raw {score.toFixed(4)})</span>
+            <div className="score-value-block">
+              <span className="score-label-sub">Persistence score</span>
+              <div className="score-numeric-wrap">
+                <span className="score-number" style={{ color: getBarColor(score) }}>
+                  {score.toFixed(3)}
+                </span>
+                <span className="score-percentage">
+                  ({(score * 100).toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+            <div className="confidence-gate-tag">
+              <CheckCircle2 size={13} className="gate-check-icon" />
+              <span>Radiometric confidence gate: Verified</span>
+            </div>
           </div>
 
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-            {band === 'Persistent industrial source' && 'Detections exhibit persistent 24/7 periodicity, tight spatial footprint, and direct overlap with registered industrial infrastructure.'}
-            {band === 'Ambiguous / flagged for review' && 'Intermediate persistence profile. Possible intermittent furnace flaring, mining operations, or multi-day localized burns.'}
-            {band === 'Transient fire event' && 'Isolated thermal anomaly characterized by rapid temporal decay and wide separation from industrial infrastructure (wildfire/agricultural burn).'}
-          </div>
+          {/* Concise Analyst Assessment */}
+          {getAnalystAssessment()}
 
-          {/* Temporal FRP Curve embedded directly into the hero card */}
-          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          {/* Embedded FRP Temporal Progression */}
+          <div className="embedded-chart-section">
             <FrpTimeSeriesChart detections={detections} band={band} />
           </div>
-        </div>
+        </section>
 
-        {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
+        {/* Tab Navigation */}
+        <div className="panel-tabs" role="tablist">
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'features'}
             onClick={() => setActiveTab('features')}
-            className={`filter-btn ${activeTab === 'features' ? 'active' : ''}`}
-            style={{ flex: 1, justifyContent: 'center' }}
+            className={`tab-btn ${activeTab === 'features' ? 'is-active' : ''}`}
           >
-            <BarChart2 size={14} /> 6-Feature Math Vector
+            <Layers size={13} className="tab-icon-svg" />
+            <span>Feature Assessment</span>
           </button>
           <button
-            onClick={() => setActiveTab('detections')}
-            className={`filter-btn ${activeTab === 'detections' ? 'active' : ''}`}
-            style={{ flex: 1, justifyContent: 'center' }}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'temporal'}
+            onClick={() => setActiveTab('temporal')}
+            className={`tab-btn ${activeTab === 'temporal' ? 'is-active' : ''}`}
           >
-            <Radio size={14} /> Raw Passes ({detections?.length || 0})
+            <Clock size={13} className="tab-icon-svg" />
+            <span>Historical Activity</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'detections'}
+            onClick={() => setActiveTab('detections')}
+            className={`tab-btn ${activeTab === 'detections' ? 'is-active' : ''}`}
+          >
+            <Radio size={13} className="tab-icon-svg" />
+            <span>Thermal Observations ({detections?.length || 0})</span>
           </button>
         </div>
 
-        {/* Tab 1: Feature Vector */}
+        {/* Tab 1: 6-Feature Mathematical Formulation */}
         {activeTab === 'features' && (
-          <>
-            {/* Cluster Telemetry Card */}
+          <div className="tab-body" role="tabpanel">
+            {/* Cluster Geospatial Coordinates */}
             <div className="info-card">
               <div className="info-card-title">
-                <MapPin size={14} /> Spatial & Temporal Coordinates
+                <MapPin size={13} className="card-title-icon-svg" />
+                <span>Geospatial & Temporal Coordinates</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
-                <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Centroid Lat / Lon</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+              <div className="coords-grid">
+                <div className="coords-cell">
+                  <div className="cell-label">Centroid Coordinates</div>
+                  <div className="cell-val">
                     {cluster.centroid_lat.toFixed(4)}°N, {cluster.centroid_lon.toFixed(4)}°E
                   </div>
                 </div>
-                <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Cluster Radius Footprint</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {(cluster.radius_meters || 0).toFixed(0)} meters
+                <div className="coords-cell">
+                  <div className="cell-label">Spatial Spread</div>
+                  <div className="cell-val">
+                    Radius: {(cluster.radius_meters || 0).toFixed(0)} m
                   </div>
                 </div>
-                <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>First Detection</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                <div className="coords-cell">
+                  <div className="cell-label">First Observed</div>
+                  <div className="cell-val">
                     {cluster.first_seen ? cluster.first_seen.replace('T', ' ') : 'N/A'}
                   </div>
                 </div>
-                <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Last Detection</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                <div className="coords-cell">
+                  <div className="cell-label">Last Observed</div>
+                  <div className="cell-val">
                     {cluster.last_seen ? cluster.last_seen.replace('T', ' ') : 'N/A'}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Mathematical Feature Breakdown */}
+            {/* 6-Feature Evaluation Bars */}
             <div className="info-card">
               <div className="info-card-title">
-                <ShieldCheck size={14} /> Feature-by-Feature Evaluation
+                <Scale size={13} className="card-title-icon-svg" />
+                <span>Feature Assessment (6-Feature Formulation)</span>
               </div>
               <div className="feature-list">
                 {featureConfigs.map((f) => (
                   <div key={f.key} className="feature-item">
                     <div className="feature-header">
-                      <div className="feature-name">
-                        <span>{f.name}</span>
-                        <span className="feature-weight-tag">{f.weight}</span>
+                      <div className="feature-name-group">
+                        <span className="feature-name">{f.name}</span>
+                        <span className="feature-weight-tag" title="Baseline formulation weight">{f.weight}</span>
                       </div>
                       <div className="feature-values">
-                        <span style={{ color: 'var(--text-muted)', marginRight: '6px' }}>{f.raw}</span>
-                        <b style={{ color: getBarColor(f.norm) }}>{(f.norm * 100).toFixed(0)}%</b>
+                        <span className="feature-raw">{f.raw}</span>
+                        <b className="feature-score" style={{ color: getBarColor(f.norm) }}>
+                          {(f.norm * 100).toFixed(0)}%
+                        </b>
                       </div>
                     </div>
                     <div className="progress-track">
@@ -388,39 +520,30 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
                         }}
                       />
                     </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                      {f.desc}
-                    </div>
+                    <div className="feature-desc">{f.desc}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Closest Industrial Landmark */}
+            {/* Industrial Context / Infrastructure Proximity */}
             {closest_industrial_sites && closest_industrial_sites.length > 0 && (
               <div className="info-card">
                 <div className="info-card-title">
-                  <Factory size={14} /> Proximity to OSM Industrial Sites
+                  <Building2 size={13} className="card-title-icon-svg" />
+                  <span>Industrial Context & Proximity</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="osm-proximity-list">
                   {closest_industrial_sites.map((site, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        padding: '8px 12px',
-                        background: 'rgba(255,255,255,0.03)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontSize: '12px'
-                      }}
-                    >
+                    <div key={i} className="osm-proximity-item">
                       <div>
-                        <div style={{ fontWeight: 600, color: '#fff' }}>{site.name}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{site.site_type}</div>
+                        <div className="osm-site-name">{site.name}</div>
+                        <div className="osm-site-type">{site.site_type || 'industrial facility'}</div>
                       </div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: site.distance_meters < 1000 ? '#10b981' : '#94a3b8' }}>
+                      <div
+                        className="osm-distance"
+                        style={{ color: site.distance_meters < 1000 ? '#10b981' : '#38bdf8' }}
+                      >
                         {site.distance_meters < 1000 ? `${site.distance_meters.toFixed(0)} m` : `${(site.distance_meters / 1000).toFixed(1)} km`}
                       </div>
                     </div>
@@ -428,57 +551,56 @@ export default function ClusterDetailsPanel({ detail, onClose, loading }) {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
 
-        {/* Tab 2: Raw Satellite Detections Table */}
+        {/* Tab 2: Historical Activity & Multi-Temporal FRP Analytics */}
+        {activeTab === 'temporal' && (
+          <div className="tab-body" role="tabpanel">
+            <HistoricalThermalAnalysis
+              cluster={cluster}
+              classification={classification}
+              detections={detections}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: Thermal Observations Table */}
         {activeTab === 'detections' && (
-          <div className="info-card" style={{ padding: '8px' }}>
-            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                    <th style={{ padding: '6px' }}>Date/Time</th>
-                    <th style={{ padding: '6px' }}>Sensor</th>
-                    <th style={{ padding: '6px' }}>FRP (MW)</th>
-                    <th style={{ padding: '6px' }}>Pass</th>
-                    <th style={{ padding: '6px' }}>Conf</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detections && detections.map((d) => (
-                    <tr key={d.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <td style={{ padding: '6px', color: '#fff' }}>
-                        {d.acq_date} {d.acq_time}
-                      </td>
-                      <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>
-                        {d.satellite || 'VIIRS'}
-                      </td>
-                      <td style={{ padding: '6px', fontWeight: 700, color: '#f59e0b' }}>
-                        {d.frp ? d.frp.toFixed(1) : '-'}
-                      </td>
-                      <td style={{ padding: '6px' }}>
-                        <span style={{
-                          padding: '1px 4px',
-                          borderRadius: '3px',
-                          fontSize: '9px',
-                          background: d.daynight === 'D' ? 'rgba(245,158,11,0.2)' : 'rgba(99,102,241,0.2)',
-                          color: d.daynight === 'D' ? '#fbbf24' : '#a5b4fc'
-                        }}>
-                          {d.daynight === 'D' ? 'DAY' : 'NIGHT'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '6px', color: 'var(--text-muted)' }}>
-                        {d.confidence || 'nom'}
-                      </td>
+          <div className="tab-body" role="tabpanel">
+            <div className="info-card" style={{ padding: '8px' }}>
+              <div className="detections-table-wrapper">
+                <table className="detections-table" aria-label="Member satellite detections">
+                  <thead>
+                    <tr>
+                      <th>Acquisition Time</th>
+                      <th>Sensor</th>
+                      <th>FRP (MW)</th>
+                      <th>Pass</th>
+                      <th>Confidence</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {detections && detections.map((d) => (
+                      <tr key={d.id}>
+                        <td className="cell-timestamp">{d.acq_date} {d.acq_time}</td>
+                        <td className="cell-satellite">{d.satellite || 'VIIRS'}</td>
+                        <td className="cell-frp">{d.frp ? d.frp.toFixed(1) : '-'}</td>
+                        <td>
+                          <span className={`pass-badge ${d.daynight === 'D' ? 'is-day' : 'is-night'}`}>
+                            {d.daynight === 'D' ? 'DAY' : 'NIGHT'}
+                          </span>
+                        </td>
+                        <td className="cell-conf">{d.confidence || 'nominal'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </aside>
   );
 }

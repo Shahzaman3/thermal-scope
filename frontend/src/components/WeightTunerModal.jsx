@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Sliders, RotateCcw, CheckCircle2, Award, ShieldAlert } from 'lucide-react';
+import { X, Sliders, RotateCcw, Award } from 'lucide-react';
 
 const DEFAULT_WEIGHTS = {
   recurrence_count: 0.25,

@@ -1,14 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Marker, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { Satellite } from 'lucide-react';
+import MapLegend from './MapLegend';
 
-// Fix leaflet default marker icons in React
+// Localized Leaflet default marker icons (offline-first, zero CDN dependency)
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconRetinaUrl: '/images/marker-icon-2x.png',
+  iconUrl: '/images/marker-icon.png',
+  shadowUrl: '/images/marker-shadow.png',
 });
 
 function MapRecenter({ targetCoords, zoom }) {
@@ -16,12 +18,107 @@ function MapRecenter({ targetCoords, zoom }) {
   useEffect(() => {
     if (targetCoords) {
       map.flyTo([targetCoords.lat, targetCoords.lon], zoom || 12, {
-        duration: 1.4
+        duration: 1.2
       });
     }
   }, [targetCoords, zoom, map]);
   return null;
 }
+
+function MapResizer() {
+  const map = useMap();
+
+  useEffect(() => {
+    // Expose for inspection & debugging
+    window._leaflet_map = map;
+
+    // Invalidate size immediately
+    map.invalidateSize({ pan: false });
+
+    // Staggered invalidations to account for CSS/layout stabilization
+    const timer1 = setTimeout(() => {
+      map.invalidateSize({ pan: false });
+    }, 100);
+
+    const timer2 = setTimeout(() => {
+      map.invalidateSize({ pan: false });
+    }, 400);
+
+    // Native ResizeObserver on container
+    const container = map.getContainer();
+    if (!container || typeof ResizeObserver === 'undefined') {
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+
+    let resizeTimer = null;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            map.invalidateSize({ pan: false });
+          }, 50);
+        }
+      }
+    });
+
+    observer.observe(container);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
+
+const CARTO_KEY = import.meta.env.VITE_CARTO_API_KEY;
+
+// Basemap definitions: Authenticated CARTO + Keyless ESRI / OSM / Offline Grid
+const BASEMAP_OPTIONS = {
+  ...(CARTO_KEY ? {
+    carto_dark: {
+      id: 'carto_dark',
+      name: 'CARTO Dark Matter (Authenticated)',
+      url: `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${CARTO_KEY}`,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      maxZoom: 20,
+      className: 'carto-dark-tiles'
+    }
+  } : {}),
+  esri_dark: {
+    id: 'esri_dark',
+    name: 'ESRI Dark Gray (Keyless)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+    maxNativeZoom: 16,
+    maxZoom: 19,
+    className: 'esri-dark-tiles'
+  },
+  osm_tactical: {
+    id: 'osm_tactical',
+    name: 'Tactical OpenStreetMap (Keyless)',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+    className: 'tactical-osm-tiles'
+  },
+  offline_grid: {
+    id: 'offline_grid',
+    name: 'Offline Tactical Grid (0 Network)',
+    url: null,
+    attribution: 'Offline Tactical Coordinate System • SIH26162',
+    className: 'offline-grid-tiles'
+  }
+};
 
 export default function MapView({
   clusters,
@@ -30,8 +127,26 @@ export default function MapView({
   onSelectCluster,
   osmSites,
   showOsmSites,
+  onToggleOsmSites,
   flyToTarget
 }) {
+  const [selectedBasemap, setSelectedBasemap] = useState(CARTO_KEY ? 'carto_dark' : 'esri_dark');
+  const [tileOffline, setTileOffline] = useState(false);
+
+  const activeBasemap = BASEMAP_OPTIONS[selectedBasemap] || (CARTO_KEY ? BASEMAP_OPTIONS.carto_dark : BASEMAP_OPTIONS.esri_dark) || BASEMAP_OPTIONS.esri_dark;
+
+  const handleTileError = () => {
+    // Graceful fallback chain: carto_dark -> esri_dark -> osm_tactical -> offline_grid
+    if (selectedBasemap === 'carto_dark') {
+      setSelectedBasemap('esri_dark');
+    } else if (selectedBasemap === 'esri_dark') {
+      setSelectedBasemap('osm_tactical');
+    } else {
+      setSelectedBasemap('offline_grid');
+      setTileOffline(true);
+    }
+  };
+
   const getMarkerColor = (band) => {
     if (band === 'Persistent industrial source') return '#10b981';
     if (band === 'Ambiguous / flagged for review') return '#f59e0b';
@@ -39,20 +154,13 @@ export default function MapView({
   };
 
   const getMarkerRadius = (count) => {
-    return Math.min(24, Math.max(10, 8 + Math.sqrt(count) * 2.2));
+    return Math.min(22, Math.max(9, 7 + Math.sqrt(count) * 2.0));
   };
 
-  // Custom icon for OSM Industrial sites
+  // Custom diamond icon for OSM Industrial sites
   const osmIcon = L.divIcon({
     className: 'osm-marker-icon',
-    html: `<div style="
-      width: 12px;
-      height: 12px;
-      background: #0284c7;
-      border: 2px solid #38bdf8;
-      transform: rotate(45deg);
-      box-shadow: 0 0 8px #38bdf8;
-    "></div>`,
+    html: `<div class="osm-diamond-pin" title="OSM Industrial Infrastructure"></div>`,
     iconSize: [14, 14],
     iconAnchor: [7, 7]
   });
@@ -60,21 +168,33 @@ export default function MapView({
   const activeFlyTarget = flyToTarget || (selectedCluster ? { lat: selectedCluster.centroid_lat, lon: selectedCluster.centroid_lon } : null);
 
   return (
-    <div className="map-viewport" id="map-viewport">
+    <div className={`map-viewport ${selectedBasemap === 'offline_grid' || tileOffline ? 'is-offline' : ''}`} id="map-viewport">
       <MapContainer
         center={[21.9, 85.6]}
         zoom={8}
         scrollWheelZoom={true}
         style={{ width: '100%', height: '100%' }}
+        className={selectedBasemap === 'offline_grid' ? 'offline-mode' : ''}
       >
-        {/* CartoDB Dark Matter Tiles */}
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
-        />
+        {/* Keyless, watermark-free basemap with automatic offline fallback */}
+        {activeBasemap.url && (
+          <TileLayer
+            key={activeBasemap.id}
+            attribution={activeBasemap.attribution}
+            url={activeBasemap.url}
+            subdomains={activeBasemap.subdomains || 'abc'}
+            maxNativeZoom={activeBasemap.maxNativeZoom || 19}
+            maxZoom={activeBasemap.maxZoom || 19}
+            className={activeBasemap.className}
+            eventHandlers={{
+              tileerror: handleTileError
+            }}
+          />
+        )}
 
         <MapRecenter targetCoords={activeFlyTarget} zoom={selectedCluster ? 13 : 11} />
+        <MapResizer />
+
 
         {/* OSM Industrial Sites Reference Layer */}
         {showOsmSites && osmSites.map((site) => (
@@ -83,48 +203,57 @@ export default function MapView({
             position={[site.latitude, site.longitude]}
             icon={osmIcon}
           >
-            <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: '#0284c7' }}>
-                🏢 {site.name}
-                <div style={{ fontSize: '10px', color: '#64748b' }}>{site.site_type}</div>
+            <Tooltip direction="top" offset={[0, -8]} opacity={0.96}>
+              <div className="tactical-tooltip osm-tooltip">
+                <div className="tooltip-badge">REGISTERED INDUSTRIAL SITE</div>
+                <div className="tooltip-title">{site.name}</div>
+                <div className="tooltip-sub">Type: {site.site_type || 'industrial entity'}</div>
+                <div className="tooltip-coords">
+                  {site.latitude.toFixed(4)}°N, {site.longitude.toFixed(4)}°E
+                </div>
               </div>
             </Tooltip>
           </Marker>
         ))}
 
-        {/* Member Raw Hotspots Footprint Overlay (Rendered when cluster is inspected) */}
+        {/* Raw Member Detections Overlay (active when cluster inspected) */}
         {selectedCluster && clusterDetail && clusterDetail.detections && (
           clusterDetail.detections.map((det) => (
             <CircleMarker
               key={`det-${det.id}`}
               center={[det.latitude, det.longitude]}
-              radius={Math.max(3, Math.min(7, (det.frp || 10) / 25))}
+              radius={Math.max(3.5, Math.min(8, (det.frp || 10) / 22))}
               pathOptions={{
                 color: det.daynight === 'D' ? '#fbbf24' : '#818cf8',
                 fillColor: det.daynight === 'D' ? '#fbbf24' : '#818cf8',
-                fillOpacity: 0.85,
-                weight: 1
+                fillOpacity: 0.9,
+                weight: 1.5
               }}
             >
-              <Tooltip direction="top" offset={[0, -4]} opacity={0.9}>
-                <div style={{ fontSize: '10px', color: '#0f172a' }}>
-                  <b>{det.satellite || 'VIIRS'} Pass</b> | FRP: {det.frp} MW<br />
-                  {det.acq_date} {det.acq_time} ({det.daynight === 'D' ? 'Day' : 'Night'})
+              <Tooltip direction="top" offset={[0, -4]} opacity={0.92}>
+                <div className="tactical-tooltip detection-tooltip">
+                  <div className="tooltip-badge">SATELLITE PASS • {det.satellite || 'VIIRS'}</div>
+                  <div className="tooltip-title">FRP: <b>{det.frp ? `${det.frp} MW` : 'N/A'}</b></div>
+                  <div className="tooltip-sub">
+                    {det.acq_date} {det.acq_time} UTC • {det.daynight === 'D' ? 'Day pass' : 'Night pass'}
+                  </div>
                 </div>
               </Tooltip>
             </CircleMarker>
           ))
         )}
 
-        {/* Hotspot Clusters Layer */}
+        {/* Classified Hotspot Clusters Layer */}
         {clusters.map((c) => {
           const isSelected = selectedCluster && selectedCluster.cluster_id === c.cluster_id;
           const color = getMarkerColor(c.band_label);
           const radius = getMarkerRadius(c.detection_count);
+          const isPersistent = c.band_label === 'Persistent industrial source';
+          const isAmbiguous = c.band_label === 'Ambiguous / flagged for review';
 
           return (
             <React.Fragment key={c.cluster_id}>
-              {/* Highlight halo when selected */}
+              {/* Outer Selection Halo */}
               {isSelected && (
                 <CircleMarker
                   center={[c.centroid_lat, c.centroid_lon]}
@@ -132,42 +261,59 @@ export default function MapView({
                   pathOptions={{
                     color: color,
                     fillColor: color,
-                    fillOpacity: 0.2,
+                    fillOpacity: 0.18,
                     weight: 2,
                     dashArray: '4, 4'
                   }}
                 />
               )}
 
+              {/* Main Cluster Marker */}
               <CircleMarker
                 center={[c.centroid_lat, c.centroid_lon]}
                 radius={radius}
                 pathOptions={{
-                  color: color,
+                  color: isSelected ? '#ffffff' : color,
                   fillColor: color,
-                  fillOpacity: isSelected ? 0.9 : 0.65,
+                  fillOpacity: isSelected ? 0.95 : 0.72,
                   weight: isSelected ? 3 : 1.5
                 }}
                 eventHandlers={{
                   click: () => onSelectCluster(c)
                 }}
               >
-                <Tooltip direction="top" offset={[0, -radius]} opacity={0.95}>
-                  <div style={{ padding: '2px', color: '#0f172a' }}>
-                    <div style={{ fontWeight: 800, fontSize: '12px' }}>
-                      Cluster #{c.cluster_id}
+                <Tooltip direction="top" offset={[0, -radius - 2]} opacity={0.98}>
+                  <div className="tactical-tooltip cluster-tooltip">
+                    <div className="tooltip-header-row">
+                      <span className="tooltip-cluster-id">CLUSTER #{c.cluster_id}</span>
+                      <span
+                        className="tooltip-band-pill"
+                        style={{
+                          backgroundColor: `${color}25`,
+                          color: color,
+                          borderColor: `${color}60`
+                        }}
+                      >
+                        {isPersistent ? 'PERSISTENT' : (isAmbiguous ? 'REVIEW' : 'TRANSIENT')}
+                      </span>
                     </div>
-                    <div style={{ color: color, fontWeight: 700, fontSize: '11px' }}>
-                      {c.band_label}
+
+                    <div className="tooltip-score-row">
+                      <span className="tooltip-score-label">Persistence:</span>
+                      <b className="tooltip-score-value" style={{ color }}>
+                        {(c.persistence_score * 100).toFixed(1)}%
+                      </b>
+                      <span className="tooltip-count-badge">
+                        {c.detection_count} passes
+                      </span>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#334155', marginTop: '2px' }}>
-                      Score: <b>{(c.persistence_score * 100).toFixed(1)}%</b> | Detections: <b>{c.detection_count}</b>
-                    </div>
+
                     {c.dist_to_nearest_industrial !== undefined && (
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>
-                        Nearest Industry: {(c.dist_to_nearest_industrial / 1000).toFixed(1)} km
+                      <div className="tooltip-proximity">
+                        Nearest Facility: <b>{(c.dist_to_nearest_industrial / 1000).toFixed(1)} km</b>
                       </div>
                     )}
+                    <div className="tooltip-instruction">Click cluster to inspect 6-feature vector</div>
                   </div>
                 </Tooltip>
               </CircleMarker>
@@ -175,6 +321,42 @@ export default function MapView({
           );
         })}
       </MapContainer>
+
+      {/* Floating Tactical Map Legend */}
+      <MapLegend
+        showOsmSites={showOsmSites}
+        onToggleOsmSites={onToggleOsmSites}
+        totalClustersCount={clusters.length}
+        osmSitesCount={osmSites.length}
+        selectedBasemap={selectedBasemap}
+        onSelectBasemap={(bm) => {
+          setSelectedBasemap(bm);
+          if (bm !== 'offline_grid') setTileOffline(false);
+        }}
+        basemapOptions={BASEMAP_OPTIONS}
+      />
+
+      {/* Offline Tactical Fallback Status Indicator */}
+      {(tileOffline || selectedBasemap === 'offline_grid') && (
+        <div className="offline-tactical-banner" role="alert">
+          <Satellite size={14} className="banner-icon-svg" />
+          <div className="banner-text">
+            <b>Offline Coordinate Grid:</b> Zero-network mode • Hotspot clusters &amp; industrial facilities operational
+          </div>
+          {tileOffline && (
+            <button
+              type="button"
+              className="offline-reconnect-btn"
+              onClick={() => {
+                setTileOffline(false);
+                setSelectedBasemap('esri_dark');
+              }}
+            >
+              Retry Online
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
