@@ -32,6 +32,7 @@ from app.services.firms_ingestion_service import (
     parse_iso_or_utc,
     format_utc,
     format_ist,
+    get_ingestion_history,
     _state
 )
 from app.database import get_db
@@ -347,3 +348,37 @@ class TestSecurityAndSecretRedaction:
             data = resp.json()
             assert data["firms_service"] == "configured"
             assert data["pipeline"] == "available"
+
+
+class TestIngestionHistoryAndProvenance:
+    """Test persistence and retrieval of historical ingestion runs and source provenance."""
+
+    def test_ingestion_history_recording_and_endpoint(self, client, temp_db):
+        mock_http = MagicMock()
+        mock_http.get.return_value = MagicMock(status_code=200, text=SAMPLE_VIIRS_CSV)
+
+        with patch.dict(os.environ, {"FIRMS_MAP_KEY": "TEST_MAP_KEY_HISTORY"}):
+            res = ingest_live_firms_data(
+                days=2,
+                source="VIIRS_NOAA20_NRT",
+                custom_db_path=temp_db,
+                session=mock_http
+            )
+            assert res["status"] == "success"
+            assert res["run_id"] is not None
+
+            history = get_ingestion_history(limit=10, custom_db_path=temp_db)
+            assert len(history) == 1
+            record = history[0]
+            assert record["id"] == res["run_id"]
+            assert record["status"] == "SUCCESS"
+            assert record["source"] == "VIIRS_NOAA20_NRT"
+            assert record["records_received"] == 2
+            assert record["records_inserted"] == 2
+
+            # Test API endpoint
+            resp = client.get("/api/v1/firms/ingest/history")
+            assert resp.status_code == 200
+            api_data = resp.json()
+            assert "history" in api_data
+            assert "total_runs" in api_data

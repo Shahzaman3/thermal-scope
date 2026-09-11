@@ -28,6 +28,8 @@ export default function FirmsIngestionModal({ isOpen, onClose, onIngestionSucces
   const [errorMsg, setErrorMsg] = useState(null);
   const [errorCategory, setErrorCategory] = useState(null);
 
+  const [historyLogs, setHistoryLogs] = useState([]);
+
   // Fetch backend status
   const fetchStatus = useCallback(async () => {
     try {
@@ -41,14 +43,28 @@ export default function FirmsIngestionModal({ isOpen, onClose, onIngestionSucces
     }
   }, []);
 
+  // Fetch ingestion history audit log
+  const fetchHistory = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/firms/ingest/history?limit=15`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryLogs(data.history || []);
+      }
+    } catch (e) {
+      console.warn('Unable to retrieve ingestion history:', e);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setIngestionResult(null);
       setErrorMsg(null);
       setErrorCategory(null);
       fetchStatus();
+      fetchHistory();
     }
-  }, [isOpen, fetchStatus]);
+  }, [isOpen, fetchStatus, fetchHistory]);
 
   if (!isOpen) return null;
 
@@ -363,6 +379,55 @@ export default function FirmsIngestionModal({ isOpen, onClose, onIngestionSucces
                 {(errorCategory === 'NETWORK_ERROR' || errorCategory === 'TIMEOUT') && (
                   <span> Could not establish a connection to NASA FIRMS modaps servers. Verify internet connectivity. The offline dataset remains intact.</span>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Ingestion Audit Trail Section */}
+          {historyLogs.length > 0 && (
+            <div className="firms-controls-card history-card" style={{ marginTop: '1rem' }}>
+              <div className="firms-card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Ingestion Run Audit History &amp; Source Provenance</span>
+                <span className="param-hint" style={{ fontSize: '0.75rem' }}>{historyLogs.length} total logged run{historyLogs.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
+                <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted, #888)' }}>
+                      <th style={{ padding: '6px' }}>Run ID</th>
+                      <th style={{ padding: '6px' }}>Started At</th>
+                      <th style={{ padding: '6px' }}>Source Product</th>
+                      <th style={{ padding: '6px' }}>Recv / Valid / New</th>
+                      <th style={{ padding: '6px' }}>Status</th>
+                      <th style={{ padding: '6px' }}>Pipeline</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyLogs.map((log) => (
+                      <tr key={log.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '6px', fontWeight: 'bold' }}>#{log.id}</td>
+                        <td style={{ padding: '6px' }}>{log.started_at ? log.started_at.replace('T', ' ').substring(0, 19) : 'N/A'}</td>
+                        <td style={{ padding: '6px' }}>{log.source || 'ALL'}</td>
+                        <td style={{ padding: '6px' }}>{log.records_received} / {log.records_validated} / <b style={{ color: log.records_inserted > 0 ? '#4caf50' : 'inherit' }}>{log.records_inserted}</b></td>
+                        <td style={{ padding: '6px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: '600',
+                            backgroundColor: log.status === 'SUCCESS' ? 'rgba(76,175,80,0.2)' : 'rgba(244,67,54,0.2)',
+                            color: log.status === 'SUCCESS' ? '#81c784' : '#e57373'
+                          }}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '6px', fontSize: '0.75rem', color: 'var(--text-muted, #aaa)' }}>
+                          {log.pipeline_status || 'NOT_RUN'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

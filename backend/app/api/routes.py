@@ -3,8 +3,8 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 # pyrefly: ignore [missing-import]
 from ..database import get_db, get_db_stats
-from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse
-from ..services.firms_ingestion_service import get_ingestion_status, ingest_live_firms_data, _state
+from ..models import FirmsIngestRequest, FirmsIngestResponse, FirmsStatusResponse, HealthResponse, IngestionHistoryResponse
+from ..services.firms_ingestion_service import get_ingestion_status, ingest_live_firms_data, get_ingestion_history, update_ingestion_run_pipeline, _state
 import sys
 from pathlib import Path
 
@@ -255,6 +255,7 @@ def ingest_firms_endpoint(req: Optional[FirmsIngestRequest] = None) -> Dict[str,
         _state.pipeline_status = "NOT_RUN"
         return {
             "status": "error",
+            "run_id": ingest_result.get("run_id"),
             "source": ingest_result.get("source", "OFFLINE_DEMO"),
             "operational_status": "ERROR",
             "records_received": ingest_result.get("records_received", 0),
@@ -307,8 +308,15 @@ def ingest_firms_endpoint(req: Optional[FirmsIngestRequest] = None) -> Dict[str,
     _state.pipeline_executed = pipeline_executed
     _state.pipeline_status = pipeline_status
 
+    if ingest_result.get("run_id"):
+        update_ingestion_run_pipeline(
+            run_id=ingest_result["run_id"],
+            pipeline_status=pipeline_status
+        )
+
     return {
         "status": "success",
+        "run_id": ingest_result.get("run_id"),
         "source": ingest_result["source"],
         "operational_status": ingest_result.get("operational_status", "LIVE"),
         "requested_window_days": ingest_result.get("requested_window_days", params.days),
@@ -329,6 +337,17 @@ def ingest_firms_endpoint(req: Optional[FirmsIngestRequest] = None) -> Dict[str,
         "pipeline_status": pipeline_status,
         "pipeline": pipeline_summary
     }
+
+
+@router.get("/v1/firms/ingest/history", tags=["NASA FIRMS Live Ingestion"])
+@router.get("/firms/ingest/history", tags=["NASA FIRMS Live Ingestion"])
+def get_firms_ingestion_history(limit: int = Query(default=50, ge=1, le=500, description="Maximum number of historical runs to retrieve")) -> IngestionHistoryResponse:
+    """Retrieve historical NASA FIRMS satellite thermal anomaly ingestion logs and source provenance."""
+    history_records = get_ingestion_history(limit=limit)
+    return IngestionHistoryResponse(
+        history=history_records,
+        total_runs=len(history_records)
+    )
 
 
 @router.post("/pipeline/run", tags=["Pipeline"])

@@ -100,6 +100,7 @@ class FirmsIngestRequest(BaseModel):
 
 class FirmsIngestResponse(BaseModel):
     status: str
+    run_id: Optional[int] = None
     source: str
     operational_status: str = "LIVE"
     requested_window_days: Optional[int] = None
@@ -152,3 +153,25 @@ class FirmsStatusResponse(BaseModel):
     error_category: Optional[str] = None
     last_error: Optional[str] = None
     message: str
+
+class FirmsIngestionRun(BaseModel):
+    id: int
+    started_at: str
+    completed_at: Optional[str] = None
+    source: Optional[str] = None
+    bbox: Optional[str] = None
+    days_requested: Optional[int] = None
+    records_received: int = 0
+    records_validated: int = 0
+    records_inserted: int = 0
+    records_duplicate: int = 0
+    records_rejected: int = 0
+    status: str
+    error_message: Optional[str] = None
+    pipeline_status: Optional[str] = None
+    pipeline_started_at: Optional[str] = None
+    pipeline_completed_at: Optional[str] = None
+
+class IngestionHistoryResponse(BaseModel):
+    history: list[FirmsIngestionRun]
+    total_runs: int
