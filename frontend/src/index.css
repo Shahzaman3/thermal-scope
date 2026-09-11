@@ -1518,7 +1518,6 @@ body, html {
   }
   .tactical-header {
     height: auto;
-    min-height: auto;
     padding: 10px 14px;
     flex-direction: column;
     align-items: flex-start;
