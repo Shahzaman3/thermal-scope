@@ -378,6 +378,106 @@ def fetch_firms_source_csv(
 
 
 
+def record_ingestion_run(
+    started_at: str,
+    completed_at: Optional[str],
+    source: Optional[str],
+    bbox: Optional[str],
+    days_requested: Optional[int],
+    records_received: int,
+    records_validated: int,
+    records_inserted: int,
+    records_duplicate: int,
+    records_rejected: int,
+    status: str,
+    error_message: Optional[str] = None,
+    pipeline_status: Optional[str] = "NOT_RUN",
+    pipeline_started_at: Optional[str] = None,
+    pipeline_completed_at: Optional[str] = None,
+    custom_db_path: Optional[Path] = None
+) -> int:
+    """Insert a record of an ingestion run into the firms_ingestion_runs table and return its ID."""
+    with get_db(custom_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO firms_ingestion_runs (
+                started_at, completed_at, source, bbox, days_requested,
+                records_received, records_validated, records_inserted,
+                records_duplicate, records_rejected, status, error_message,
+                pipeline_status, pipeline_started_at, pipeline_completed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            started_at, completed_at, source, bbox, days_requested,
+            records_received, records_validated, records_inserted,
+            records_duplicate, records_rejected, status, error_message,
+            pipeline_status, pipeline_started_at, pipeline_completed_at
+        ))
+        run_id = cursor.lastrowid
+        return run_id if run_id is not None else 0
+
+
+def update_ingestion_run_pipeline(
+    run_id: int,
+    pipeline_status: str,
+    pipeline_started_at: Optional[str] = None,
+    pipeline_completed_at: Optional[str] = None,
+    custom_db_path: Optional[Path] = None
+) -> None:
+    """Update pipeline execution status on a specific ingestion run record."""
+    if not run_id:
+        return
+    with get_db(custom_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE firms_ingestion_runs
+            SET pipeline_status = ?,
+                pipeline_started_at = COALESCE(?, pipeline_started_at),
+                pipeline_completed_at = COALESCE(?, pipeline_completed_at)
+            WHERE id = ?
+        """, (pipeline_status, pipeline_started_at, pipeline_completed_at, run_id))
+
+
+def get_ingestion_history(
+    limit: int = 50,
+    custom_db_path: Optional[Path] = None
+) -> List[Dict[str, Any]]:
+    """Retrieve historical ingestion run records from database ordered newest first."""
+    with get_db(custom_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, started_at, completed_at, source, bbox, days_requested,
+                   records_received, records_validated, records_inserted,
+                   records_duplicate, records_rejected, status, error_message,
+                   pipeline_status, pipeline_started_at, pipeline_completed_at
+            FROM firms_ingestion_runs
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+
+    history = []
+    for r in rows:
+        history.append({
+            "id": r["id"],
+            "started_at": r["started_at"],
+            "completed_at": r["completed_at"],
+            "source": r["source"],
+            "bbox": r["bbox"],
+            "days_requested": r["days_requested"],
+            "records_received": r["records_received"],
+            "records_validated": r["records_validated"],
+            "records_inserted": r["records_inserted"],
+            "records_duplicate": r["records_duplicate"],
+            "records_rejected": r["records_rejected"],
+            "status": r["status"],
+            "error_message": r["error_message"],
+            "pipeline_status": r["pipeline_status"],
+            "pipeline_started_at": r["pipeline_started_at"],
+            "pipeline_completed_at": r["pipeline_completed_at"]
+        })
+    return history
+
+
 def ingest_live_firms_data(
     days: int = 2,
     source: Optional[str] = None,
@@ -401,8 +501,27 @@ def ingest_live_firms_data(
         _state.last_error = "NASA FIRMS credentials are not configured."
         _state.operational_status = "ERROR"
         _state.message = "NASA FIRMS credentials are not configured. Offline demonstration mode remains active."
+        
+        completed_at = datetime.now(timezone.utc).isoformat()
+        run_id = record_ingestion_run(
+            started_at=now_iso,
+            completed_at=completed_at,
+            source=source or "ALL",
+            bbox=bbox or DEFAULT_BBOX,
+            days_requested=days,
+            records_received=0,
+            records_validated=0,
+            records_inserted=0,
+            records_duplicate=0,
+            records_rejected=0,
+            status="ERROR",
+            error_message=_state.last_error,
+            custom_db_path=custom_db_path
+        )
+
         return {
             "status": "error",
+            "run_id": run_id,
             "source": _state.source,
             "provenance": _state.provenance,
             "operational_status": "ERROR",
@@ -457,8 +576,27 @@ def ingest_live_firms_data(
         _state.last_error = error_summary or "Ingestion encountered an error."
         _state.operational_status = "ERROR"
         _state.message = f"NASA FIRMS could not be reached. The verified offline dataset remains available. ({error_cat})"
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+        run_id = record_ingestion_run(
+            started_at=now_iso,
+            completed_at=completed_at,
+            source=_state.product_queried,
+            bbox=target_bbox,
+            days_requested=days,
+            records_received=total_received,
+            records_validated=total_valid,
+            records_inserted=0,
+            records_duplicate=0,
+            records_rejected=total_rejected,
+            status="ERROR",
+            error_message=_state.last_error,
+            custom_db_path=custom_db_path
+        )
+
         return {
             "status": "error",
+            "run_id": run_id,
             "source": _state.source,
             "provenance": _state.provenance,
             "operational_status": "ERROR",
@@ -518,12 +656,30 @@ def ingest_live_firms_data(
     else:
         _state.message = "Live FIRMS request successful. All returned observations were already present in the local dataset."
 
+    completed_at = datetime.now(timezone.utc).isoformat()
+    run_id = record_ingestion_run(
+        started_at=now_iso,
+        completed_at=completed_at,
+        source=_state.product_queried,
+        bbox=target_bbox,
+        days_requested=days,
+        records_received=total_received,
+        records_validated=total_valid,
+        records_inserted=total_inserted,
+        records_duplicate=total_skipped,
+        records_rejected=total_rejected,
+        status="SUCCESS",
+        error_message=None,
+        custom_db_path=custom_db_path
+    )
+
     latest_obs_iso, age_min, age_hr, freshness_label = get_latest_observation_info(custom_db_path)
     latest_obs_dt = parse_iso_or_utc(latest_obs_iso)
     last_success_dt = parse_iso_or_utc(now_iso)
 
     return {
         "status": "success",
+        "run_id": run_id,
         "source": _state.source,
         "provenance": _state.provenance,
         "operational_status": _state.operational_status,

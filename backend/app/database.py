@@ -60,6 +60,28 @@ def init_db(custom_path: Optional[Path] = None) -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_firms_datetime ON firms_detections(acq_datetime);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_firms_cluster ON firms_detections(cluster_id);")
 
+        # 1.5. FIRMS Ingestion Runs History
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS firms_ingestion_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                source TEXT,
+                bbox TEXT,
+                days_requested INTEGER,
+                records_received INTEGER DEFAULT 0,
+                records_validated INTEGER DEFAULT 0,
+                records_inserted INTEGER DEFAULT 0,
+                records_duplicate INTEGER DEFAULT 0,
+                records_rejected INTEGER DEFAULT 0,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                pipeline_status TEXT,
+                pipeline_started_at TEXT,
+                pipeline_completed_at TEXT
+            );
+        """)
+
         # 2. OSM Industrial Sites
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS osm_industrial_sites (
@@ -126,16 +148,32 @@ def init_db(custom_path: Optional[Path] = None) -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_class_band ON cluster_classifications(band_label);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_class_score ON cluster_classifications(persistence_score);")
 
+        # 6. Analyst Reviews & Verifications (Phase 5)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS analyst_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cluster_id INTEGER NOT NULL,
+                review_status TEXT NOT NULL,
+                notes TEXT,
+                analyst_name TEXT DEFAULT 'Analyst',
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (cluster_id) REFERENCES hotspot_clusters (cluster_id) ON DELETE CASCADE
+            );
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_analyst_reviews_cluster ON analyst_reviews(cluster_id);")
+
 
 def get_db_stats(custom_path: Optional[Path] = None) -> Dict[str, Any]:
     """Retrieve row counts and file size stats for database tables."""
     target_path = Path(custom_path) if custom_path else DB_PATH
     tables = [
+        "firms_ingestion_runs",
         "firms_detections",
         "osm_industrial_sites",
         "hotspot_clusters",
         "cluster_features",
-        "cluster_classifications"
+        "cluster_classifications",
+        "analyst_reviews"
     ]
     counts = {}
     with get_db(target_path) as conn:

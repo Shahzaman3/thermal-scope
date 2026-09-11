@@ -225,6 +225,36 @@ export default function ClusterDetailsPanel({
     URL.revokeObjectURL(url);
   };
 
+  const [reviewStatus, setReviewStatus] = useState('UNREVIEWED');
+  const [notes, setNotes] = useState('');
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [reviewSavedMsg, setReviewSavedMsg] = useState('');
+
+  const handleSaveReview = async () => {
+    setIsSavingReview(true);
+    try {
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${API_BASE}/api/v1/clusters/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cluster_id: cluster.cluster_id,
+          review_status: reviewStatus,
+          notes: notes,
+          analyst_name: 'Analyst'
+        })
+      });
+      if (res.ok) {
+        setReviewSavedMsg('Analyst review saved');
+        setTimeout(() => setReviewSavedMsg(''), 3000);
+      }
+    } catch (e) {
+      console.error('Failed to submit review:', e);
+    } finally {
+      setIsSavingReview(false);
+    }
+  };
+
   // Scientific analyst explanation derived from observed features
   const getAnalystAssessment = () => {
     if (isPersistent) {
@@ -248,7 +278,7 @@ export default function ClusterDetailsPanel({
             Thermal observations exhibit an <b>intermediate persistence profile</b> (score: {(score * 100).toFixed(1)}%). Physical indicators suggest sporadic rotary kiln flaring, mining operations, or localized burning on an industrial periphery requiring analyst review.
           </p>
           <div className="analyst-action-note">
-            <b>Recommended analyst action:</b> Retain in analyst queue for multispectral verification or field confirmation.
+            <b>Recommended analyst action:</b> Dispatch secondary verification or request high-resolution optical imagery.
           </div>
         </div>
       );
@@ -551,6 +581,53 @@ export default function ClusterDetailsPanel({
                 </div>
               </div>
             )}
+
+            {/* Analyst Review & Verification Workflow (Phase 5) */}
+            <div className="info-card" style={{ marginTop: '12px' }}>
+              <div className="info-card-title">
+                <CheckCircle2 size={13} className="card-title-icon-svg" />
+                <span>Analyst Verification & Review Status</span>
+              </div>
+              <div className="analyst-review-card-body" style={{ marginTop: '8px' }}>
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', display: 'block', color: 'var(--text-muted, #aaa)', marginBottom: '4px' }}>VERIFICATION STATUS</label>
+                  <select
+                    className="tactical-select"
+                    style={{ width: '100%', fontSize: '0.8rem', padding: '6px' }}
+                    value={reviewStatus}
+                    onChange={(e) => setReviewStatus(e.target.value)}
+                  >
+                    <option value="UNREVIEWED">⚪ UNREVIEWED (Pending Verification)</option>
+                    <option value="UNDER_INVESTIGATION">🟡 UNDER INVESTIGATION (Further Review Required)</option>
+                    <option value="VERIFIED_INDUSTRIAL">🟢 VERIFIED INDUSTRIAL (Confirmed Heavy Site)</option>
+                    <option value="VERIFIED_WILDFIRE">🔴 VERIFIED WILDFIRE / TRANSIENT (Confirmed Event)</option>
+                    <option value="DISMISSED">⚪ DISMISSED (Noise / Duplicate)</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', display: 'block', color: 'var(--text-muted, #aaa)', marginBottom: '4px' }}>ANALYST LOG &amp; ASSESSMENT NOTES</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter analyst notes or ground-truth verification comments..."
+                    style={{ width: '100%', fontSize: '0.8rem', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '6px', borderRadius: '4px' }}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="tactical-btn"
+                    style={{ fontSize: '0.75rem', padding: '4px 12px' }}
+                    onClick={handleSaveReview}
+                    disabled={isSavingReview}
+                  >
+                    {isSavingReview ? 'Saving...' : 'Save Verification'}
+                  </button>
+                  {reviewSavedMsg && <span style={{ fontSize: '0.75rem', color: '#4caf50' }}>{reviewSavedMsg}</span>}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
